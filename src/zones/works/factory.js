@@ -3,11 +3,10 @@
 // bottles, flanges), so the hall stays cheap to draw at every quality tier. Moving parts (the
 // valve wheel, the gauge needle, the giant doors, the plates over the drain, the CJP button and
 // valves, the monitors) are kept as separate objects and handed back to works.js / the director.
-import { toonify } from '../../story/style/toon.js';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { WL } from './layout.js';
-import { factoryFloor, steelPlate, blockWall, corrugated, grating, treadPlate, screen, crt, gaugeFace, handText } from './paint.js';
+import { factoryFloor, steelPlate, blockWall, corrugated, grating, treadPlate, screen, crt, gaugeFace, handText, organSkin } from './paint.js';
 import { signTexture, signPlane } from '../../story/paint.js';
 import { columnMaterial, shaftMaterial } from './shaders.js';
 import { dustMotes } from '../../story/reception.js';
@@ -40,7 +39,8 @@ class Batch {
   rod(a, b, r, color, seg = 10) {
     const d = b.clone().sub(a), L = d.length(); if (L < 1e-4) return;
     const q = new THREE.Quaternion().setFromUnitVectors(UP, d.clone().normalize());
-    this.add(cylGeo(seg), new THREE.Matrix4().compose(a.clone().add(b).multiplyScalar(0.5), q, V(r, L, r)), color);
+    const ns = this.segLen ? Math.max(1, Math.min(48, Math.ceil(L / this.segLen))) : 1; // pipes: rings along the length so they can peristalt
+    this.add(ns > 1 ? (CYLS[seg + '_' + ns] ||= new THREE.CylinderGeometry(1, 1, 1, seg, ns, false)) : cylGeo(seg), new THREE.Matrix4().compose(a.clone().add(b).multiplyScalar(0.5), q, V(r, L, r)), color);
   }
   at(geo, p, s, color, q = new THREE.Quaternion()) { this.add(geo, new THREE.Matrix4().compose(p, q, typeof s === 'number' ? V(s, s, s) : s), color); }
   mesh(mat, { cast = true, receive = true } = {}) {
@@ -76,9 +76,9 @@ export function buildFactory({ root, quality, collision, WORKS }) {
   const rng = mulberry32(77);
   const D = quality.detail;
   const g = new THREE.Group(); g.name = 'works:hall'; root.add(g);
-  const steel = new Batch(), pipes = new Batch(), rails = new Batch(), glow = new Batch();
+  const steel = new Batch(), pipes = new Batch(), rails = new Batch(), glow = new Batch(); pipes.segLen = 0.45 / Math.max(0.5, quality?.detail ?? 1);
   const batchMat = std({ vertexColors: true, roughness: 0.55, metalness: 0.55 });
-  const pipeMat = std({ vertexColors: true, roughness: 0.42, metalness: 0.35 });
+  const pipeMat = std({ vertexColors: true, roughness: 0.42, metalness: 0.35 }); pipeMat.userData.role = 'pipe'; // (peristalsis in the restyle pass)
   const railMat = std({ vertexColors: true, roughness: 0.6, metalness: 0.6 });
   const glowMat = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
   const { hx, hz, roof } = WL;
@@ -201,16 +201,18 @@ export function buildFactory({ root, quality, collision, WORKS }) {
   collision.addObstacle({ x: ST.c.x + WORKS.x, z: ST.c.z + WORKS.z, r: ST.r + 0.25 });
 
   // ---------------------------------------------------------------- vats
-  const vatTex = steelPlate(11, '#8d9193', { rust: 0.35, panel: 4 }); vatTex.repeat.set(6, 3);
   // the vats are alive: teal-glazed steel that slowly breathes, candy-pink domes
-  const vatMat = toonify(std({ map: vatTex, color: 0x8fe8ff, metalness: 0.4, roughness: 0.3 }), { rim: 0xff6ad0, rimK: 0.5, wobble: 0.05, wobbleF: 0.9, breathe: 0.012 });
-  const domeMat = toonify(std({ map: vatTex, color: 0xff8ad0, metalness: 0.4, roughness: 0.28 }), { rim: 0x9dff3a, rimK: 0.5, breathe: 0.012 });
+  // the vats are living organs: veined coral flesh that swells and breathes (src/story/style/restyle.js
+  // gives them the 'organ' motion), glossy domes like caps of muscle
+  const organTex = organSkin(11); organTex.repeat.set(3, 1.5);
+  const vatMat = std({ map: organTex, color: 0xffffff, metalness: 0.0, roughness: 0.32, emissive: 0x5a0a20, emissiveIntensity: 0.35 }); vatMat.userData.role = 'organ';
+  const domeMat = std({ map: organTex, color: 0xffc0d8, metalness: 0.0, roughness: 0.22, emissive: 0x3a0a30, emissiveIntensity: 0.3 }); domeMat.userData.role = 'organ';
   const LABELS = [['TYROSINE', 'LOCALLY SOURCED'], ['L-DOPA', 'TYROSINE HYDROXYLASE STAGE'], ['DOPAMINE', 'WANT'], ['NOREPINEPHRINE', 'VIGILANCE'], ['EPINEPHRINE', 'CARDIOVASCULAR CONSEQUENCES'], ['DOPAMINE β-HYDROXYLASE', 'CATALYST RESERVE']];
   const LCOL = ['#3f6e4a', '#2e4f7a', '#2e6a4a', '#9b1e14', '#a36a10', '#4a4a52'];
   const vats = [];
   WL.vats.forEach(([x, z, r, h], i) => {
     const body = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 40, 10, true), vatMat); body.position.set(x, h / 2 + 1.2, z); body.castShadow = body.receiveShadow = true; g.add(body); // (height rings so the vats can breathe)
-    const dome = new THREE.Mesh(new THREE.SphereGeometry(r, 40, 12, 0, Math.PI * 2, 0, Math.PI / 2), domeMat); dome.scale.y = 0.42; dome.position.set(x, h + 1.2, z); dome.castShadow = true; g.add(dome);
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(r, 40, 16, 0, Math.PI * 2, 0, Math.PI / 2), domeMat); dome.scale.y = 0.42; dome.position.set(x, h + 1.2, z); dome.castShadow = true; g.add(dome);
     const cone = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 0.3, 1.2, 40, 1, true), vatMat); cone.position.set(x, 0.6 + 0.0, z); g.add(cone);
     for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2 + 0.785; steel.beam(V(x + Math.cos(a) * r * 0.92, 0, z + Math.sin(a) * r * 0.92), V(x + Math.cos(a) * r * 0.98, 2.2, z + Math.sin(a) * r * 0.98), 0.3, 0.3, 0x2f3236); }
     { const band = new THREE.TorusGeometry(r * 1.01, 0.07, 6, 48); for (let k = 1; k < h; k += 2.6) steel.at(band, V(x, 1.2 + k, z), 1, 0x5a5e60, new THREE.Quaternion().setFromAxisAngle(V(1, 0, 0), Math.PI / 2)); }

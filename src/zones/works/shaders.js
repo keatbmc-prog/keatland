@@ -44,7 +44,7 @@ export function floodHeight(x, z, t) {
 export const floodAt = (x) => x < FLOOD.uFront.value - 1.0;
 
 export function floodMaterial() {
-  const m = new THREE.MeshStandardMaterial({ color: 0x8a6a40, roughness: 0.35, metalness: 0.15, envMapIntensity: 0.55 }); // glossy goo
+  const m = new THREE.MeshStandardMaterial({ color: 0x8a6a40, roughness: 0.35, metalness: 0.1, envMapIntensity: 0.3 }); // glossy goo (low env so it stays saturated, not pastel)
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, FLOOD, { uTime: U.time });
     sh.vertexShader = sh.vertexShader
@@ -80,9 +80,9 @@ export function floodMaterial() {
           float n2 = kl_snoise(vec3(q * 0.9 + 4.0, uTime * 0.11));
           vec2 c = klCell(q * 0.55 + n1 * 0.4);
           vec2 c2 = klCell(q * 1.6 + 7.0);
-          vec3 murk = mix(vec3(0.0, 0.16, 0.14), vec3(0.16, 0.48, 0.02), 0.5 + 0.5 * n1);       // glossy teal-to-acid goo
-          murk = mix(murk, vec3(0.50, 0.03, 0.30), smoothstep(0.35, 0.7, n2) * 0.6);            // magenta swirls
-          vec3 col = murk; float rough = 0.08; float metal = 0.0;
+          vec3 murk = mix(vec3(0.0, 0.085, 0.075), vec3(0.07, 0.30, 0.0), 0.5 + 0.5 * n1);      // deep teal-to-acid goo
+          murk = mix(murk, vec3(0.34, 0.0, 0.20), smoothstep(0.35, 0.7, n2) * 0.65);            // magenta swirls
+          vec3 col = murk; float rough = 0.25; float metal = 0.0;
           // things in it: patches of sand, soaked wood, rusted scrap, trash colours
           float chunk = (1.0 - smoothstep(0.18, 0.42, c.x)) * smoothstep(-0.2, 0.5, n2);
           vec3 thing = c.y < 0.3 ? vec3(1.0, 0.62, 0.22)                                 // sand (candy orange)
@@ -101,12 +101,12 @@ export function floodMaterial() {
           // foam at the breaking crest and in the funnel
           float crest = exp(-pow((p.x - (uFront - 2.5)) / 2.0, 2.0)) * uSurge;
           float foam = clamp(crest * (0.6 + 0.6 * n2) + uVortex * (1.0 - smoothstep(1.0, 5.0, r)) * (0.5 + 0.5 * sin(atan(dp.y, dp.x) * 6.0 - uTime * 8.0 + r * 2.0)), 0.0, 1.0);
-          col = mix(col, vec3(0.75, 0.95, 0.55), foam * 0.6); rough = mix(rough, 0.7, foam);
+          col = mix(col, vec3(0.45, 0.9, 0.25), foam * 0.55); rough = mix(rough, 0.7, foam);
           // the funnel throat goes dark
           col = mix(col, vec3(0.10, 0.02, 0.16), uVortex * (1.0 - smoothstep(0.4, 3.0, r)) * 0.8);
           diffuseColor.rgb = col;
           roughnessFactor = rough;
-          totalEmissiveRadiance += (vec3(0.25, 0.85, 0.15) * crest * 0.8 + vec3(0.0, 0.03, 0.025) + vec3(0.12, 0.0, 0.07) * smoothstep(0.5, 0.75, n2)) * uGlow * (0.6 + 0.4 * n1);
+          totalEmissiveRadiance += (vec3(0.18, 0.7, 0.05) * crest * 0.45 + vec3(0.0, 0.03, 0.025) + vec3(0.12, 0.0, 0.07) * smoothstep(0.5, 0.75, n2)) * uGlow * (0.6 + 0.4 * n1);
           vKlMetal = metal;
         }`)
       .replace('#include <lights_physical_fragment>', 'metalnessFactor = max(metalnessFactor, vKlMetal);\n#include <lights_physical_fragment>');

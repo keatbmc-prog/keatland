@@ -164,3 +164,23 @@ export function handText(lines, { w = 1024, h = 256, color = '#111', font = 'Per
     L.forEach((l, i) => { g.font = `${size}px "${font}"`; const tw = g.measureText(l).width; const sc = Math.min(1, w * 0.92 / tw); g.save(); g.translate(0, (i - (L.length - 1) / 2) * size * 1.1); g.scale(sc, 1); g.fillText(l, 0, 0); g.restore(); });
   }, { wrap: false });
 }
+
+/** Living-organ skin for the vats: glossy coral flesh with branching violet veins and pale ribs. */
+export function organSkin(seed = 5) {
+  return canvasTexture(512, 512, (g, w, h) => {
+    const rng = R(seed);
+    const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, '#ffb0a8'); gr.addColorStop(0.5, '#ff8a92'); gr.addColorStop(1, '#e4607a');
+    g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 260; i++) { const r = 6 + rng() * 26; const x = rng() * w, y = rng() * h; const c = g.createRadialGradient(x, y, 0, x, y, r); c.addColorStop(0, `rgba(255,${200 + rng() * 40 | 0},${190 + rng() * 40 | 0},0.35)`); c.addColorStop(1, 'rgba(255,200,200,0)'); g.fillStyle = c; g.fillRect(x - r, y - r, r * 2, r * 2); }
+    const vein = (x, y, a, wdt, depth) => {
+      if (depth <= 0 || wdt < 0.6) return;
+      const L = 20 + rng() * 40; const nx = x + Math.cos(a) * L, ny = y + Math.sin(a) * L;
+      g.strokeStyle = `rgba(${110 + rng() * 40 | 0},30,${120 + rng() * 60 | 0},0.55)`; g.lineWidth = wdt; g.lineCap = 'round';
+      g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo((x + nx) / 2 + (rng() - 0.5) * 20, (y + ny) / 2 + (rng() - 0.5) * 20, nx, ny); g.stroke();
+      vein(nx, ny, a + (rng() - 0.5) * 0.9, wdt * 0.82, depth - 1);
+      if (rng() < 0.45) vein(nx, ny, a + (rng() < 0.5 ? -1 : 1) * (0.6 + rng() * 0.6), wdt * 0.6, depth - 2);
+    };
+    for (let i = 0; i < 9; i++) vein(rng() * w, h + 10, -Math.PI / 2 + (rng() - 0.5) * 0.8, 5 + rng() * 4, 9);
+    g.strokeStyle = 'rgba(255,230,220,0.35)'; g.lineWidth = 6; for (let y = 40; y < h; y += 96) { g.beginPath(); g.moveTo(0, y); for (let x = 0; x <= w; x += 32) g.lineTo(x, y + Math.sin(x * 0.05 + y) * 6); g.stroke(); }
+  }, { wrap: true });
+}

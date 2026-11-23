@@ -376,6 +376,33 @@ stylized, saturated, "alive" look; the hub, gallery and jungle are unchanged.
 
 Before/after shots: `screenshots/r01…r15-*-compare.jpg` (with `-before.png` / `-after.png`).
 
+### Second pass: remodelled architecture and sculpted characters
+
+- **Warp field** (`toon.js`, `warp` option; `warpField()` / `warpAt()`): a continuous world-space field
+  that bends every static mesh of a realm. It is zero at the floor (so the collision floors stay true),
+  bellies out mid-wall, sways and melts the tops, breathes slowly, and is periodic in x (15 m, the
+  Backrooms loop jump) so the loop stays seamless. Because it is a field of world position, meshes that
+  share an edge move together (no cracks); the shader also bends the normals (finite-difference
+  Jacobian) so the bulges shade. A hot-spot makes the Keatland Motors pylon extra goopy. Props pinned to
+  walls (eyes, rings, growths) ride the same field on the CPU (`warpAt`).
+- **Tessellation** (`restyle.js`): flat walls are subdivided with `TessellateModifier` (multi-material
+  boxes per group) so they have vertices to bend. Edge length and the triangle budget scale with the
+  quality tier (0.6 m / ~1.4 M tris on high, 0.85 m on medium, 1.3 m / ~0.8 M on low).
+- **Reception**: fat rolls on every top edge, settling lathe columns on the corners (with collision), a
+  pillowy rounded roof, a puffy lip over the door, sills on the windows, a vertical colour gradient, and
+  the breathing warp. **Pylon**: hot-spot warp, goo drips off the sign and a pool at its feet.
+  **Backrooms**: warped / bulging / sagging walls, doorways and ceilings, ceiling drips.
+- **Works**: the vats are veined coral organs (`organSkin()` in `paint.js`) that swell (`organ`), the
+  pipes peristalt (`peri`, a lump travelling along the runs), fleshy rib arches vault the roof, flesh
+  collars on the vats, a large slow sag on the whole hall; the goo is deeper and more saturated.
+- **Characters**: spline-smoothed torsos, knee and elbow joints, four-finger hands with a thumb, the mop
+  wig as merged wavy tube strands, Moss's curls as merged torus ringlets, Dale's hair as spiky clumps,
+  and Moss's forearms rebuilt (shell, piston pair, hoses, glowing collars, two-segment steel fingers).
+- Colour: the lot asphalt is slate blue-grey (not lavender); Reception gets a gradient; the vats are no
+  longer navy. Known limitation: shadow maps use the un-warped shapes (bulges are a few dozen cm).
+
+Second-pass shots: `screenshots/v01…v15-*-compare.jpg` (first-pass result vs second pass).
+
 ## Adding GLB / glTF models
 
 Hero objects are registered as slots: `sword`, `creature:Gloria`, `creature:Mortimer`, `creature:Dot`,

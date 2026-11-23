@@ -351,6 +351,7 @@ async function boot() {
 
   // --- debug / automation hook (used by tools/shoot.mjs)
   window.__keatland = {
+    storyStyle,
     ready: true, quality, slots: listSlots(),
     get fps() { return fpsS.fps; },
     get state() { return { pos: player.position.toArray(), yaw: player.yaw, pitch: player.pitch, phase: flock.phase, pencil: pencil.state, eye: eye.state, swordAttempts: sword.attempts, transition: transitions.active?.name ?? null, t: simTime }; },
