@@ -64,7 +64,7 @@ const ScrubShader = {
 export function createPost(renderer, scene, camera, quality) {
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
-  composer.addPass(new ShaderPass(ScrubShader));
+  if (quality.scrub !== false) composer.addPass(new ShaderPass(ScrubShader));
   const size = renderer.getSize(new THREE.Vector2());
   let bloom = null;
   if (quality.bloom) {

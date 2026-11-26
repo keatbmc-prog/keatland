@@ -2,13 +2,16 @@
 // the void, the congregation's chant (spatialised at the altar), the pencil's scratching (follows
 // its tip), distant groans, and one-shots for the sword and the transitions.
 export class AudioEngine {
-  constructor() { this.ctx = null; this.started = false; }
+  constructor({ voices = 6 } = {}) { this.ctx = null; this.started = false; this.maxVoices = voices; } // phones: fewer chant voices
 
   start() {
-    if (this.started) { this.ctx.resume(); return; }
+    if (this.started) { if (this.ctx.state !== 'running') this.ctx.resume(); return; }
     const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
     const ctx = this.ctx = new AC();
     this.started = true;
+    // iOS Safari: unlock inside the user gesture (resume + a one-sample silent buffer)
+    if (ctx.state !== 'running') ctx.resume?.();
+    try { const b = ctx.createBufferSource(); b.buffer = ctx.createBuffer(1, 1, 22050); b.connect(ctx.destination); b.start(0); } catch (e) { /* ignore */ }
     const master = this.master = ctx.createGain(); master.gain.value = 0;
     const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -18; comp.ratio.value = 3;
     // shared reverb (generated impulse)
@@ -60,7 +63,7 @@ export class AudioEngine {
     const ctx = this.ctx;
     this.chantPan = this.panner(0, 2, -3, 8);
     const g = this.chantGain = ctx.createGain(); g.gain.value = 0;
-    const voices = [110, 130.8, 164.8, 98];
+    const voices = [110, 130.8, 164.8, 98].slice(0, Math.max(2, Math.min(4, this.maxVoices)));
     this.formants = [];
     voices.forEach((f, i) => {
       const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f; o.detune.value = (Math.random() - 0.5) * 20;

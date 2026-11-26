@@ -259,6 +259,12 @@ export function buildGallery({ scene, mats, quality, collision, photos }) {
     root, frames, exitCube, radius: R, arrival,
     update(dt, t) { updaters.forEach((f) => f(dt, t)); },
     /** The framed piece in the middle of the view (within reach), or null. */
+    /** the photo under a screen point (normalised device coords), for taps on touch screens */
+    pickAt(camera, ndc) {
+      camera.updateMatrixWorld(); ray.setFromCamera(ndc, camera);
+      const hit = ray.intersectObjects(photoMeshes, false)[0];
+      return hit ? frames[hit.object.userData.index] : null;
+    },
     pick(camera) {
       camera.updateMatrixWorld(); ray.setFromCamera(new THREE.Vector2(0, 0), camera);
       const hit = ray.intersectObjects(photoMeshes, false)[0];

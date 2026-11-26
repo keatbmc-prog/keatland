@@ -20,7 +20,7 @@ export function buildFlood({ root, quality }) {
   // the surface: from the far end of the intake tunnel to the east wall
   const x0 = -WL.hx - 22, x1 = WL.hx, segX = Math.round(150 * D + 40), segZ = Math.round(150 * D + 40);
   const geo = new THREE.PlaneGeometry(x1 - x0, WL.hz * 2, segX, segZ); geo.rotateX(-Math.PI / 2); geo.translate((x0 + x1) / 2, 0, 0);
-  const surface = new THREE.Mesh(geo, floodMaterial()); surface.receiveShadow = true; surface.frustumCulled = false; g.add(surface);
+  const surface = new THREE.Mesh(geo, floodMaterial({ cheap: !!quality.cheapShaders })); surface.receiveShadow = true; surface.frustumCulled = false; g.add(surface);
   surface.visible = false;
 
   // ---- instanced debris

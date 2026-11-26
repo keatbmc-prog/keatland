@@ -6,7 +6,7 @@
 // used by the sunlit story realm.
 import * as THREE from 'three';
 
-export function installFogChunks() {
+export function installFogChunks({ cheap = false } = {}) {
   THREE.ShaderChunk.fog_pars_vertex = /* glsl */`
 #ifdef USE_FOG
   varying float vFogDepth;
@@ -53,7 +53,7 @@ export function installFogChunks() {
     hf = clamp(hf, 0.05, 1.8);
     // slow drifting banks
     vec3 q = vFogWorld * 0.025 + vec3(fogFar*0.012, -fogFar*0.004, fogFar*0.008);
-    float banks = 0.65 + 0.7 * klFogVN(q) * klFogVN(q*2.3+3.1);
+    float banks = ${cheap ? '0.65 + 0.7 * 0.25 + 0.0 * q.x; // phones: no 3D value noise per pixel' : '0.65 + 0.7 * klFogVN(q) * klFogVN(q*2.3+3.1);'}
     float fogF = 1.0 - exp(-fogNear * dist * (0.35 + 0.65*hf) * banks);
     fogF = clamp(fogF, 0.0, 1.0);
     // haze tint: deep teal-violet low, near-black high

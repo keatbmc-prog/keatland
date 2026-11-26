@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <title>Keatland</title>
   <meta name="description" content="Keatland: the central hub. A first-person surreal world." />
   <style>
@@ -13,8 +15,8 @@
     @font-face { font-family: 'Oswald'; src: url('./fonts/oswald.ttf') format('truetype'); font-weight: 200 700; font-display: block; }
     @font-face { font-family: 'VT323'; src: url('./fonts/vt323.ttf') format('truetype'); font-display: block; }
     @font-face { font-family: 'Caveat'; src: url('./fonts/caveat.ttf') format('truetype'); font-weight: 400 700; font-display: block; }
-    html, body { margin: 0; height: 100%; background: #030305; overflow: hidden; }
-    canvas#world { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; cursor: none; }
+    html, body { margin: 0; height: 100%; background: #030305; overflow: hidden; overscroll-behavior: none; }
+    canvas#world { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; cursor: none; touch-action: none; }
     #enter { position: fixed; inset: 0; display: grid; place-items: center; background: radial-gradient(ellipse at 50% 60%, rgba(30,14,20,.55), rgba(3,3,5,.92) 70%); color: #cfc6b4; cursor: pointer; transition: opacity 2.4s ease; z-index: 2; }
     #enter.gone { opacity: 0; pointer-events: none; }
     #enter .t { font-family: 'Rubik Wet Paint', serif; font-size: clamp(48px, 9vw, 120px); letter-spacing: .04em; color: #d9c98f; opacity: .82; text-shadow: 0 0 40px rgba(255,170,90,.25); }

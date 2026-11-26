@@ -403,6 +403,33 @@ Before/after shots: `screenshots/r01…r15-*-compare.jpg` (with `-before.png` / 
 
 Second-pass shots: `screenshots/v01…v15-*-compare.jpg` (first-pass result vs second pass).
 
+## Phones and tablets
+
+Phones, tablets and weak devices (coarse pointer, small touch screen, mobile user agent, or 2 cores /
+2 GB) get the `mobile` tier by default (`src/core/quality.js`; override with `?q=high` etc., and
+`?q=mobile` on desktop to preview it):
+
+- render scale capped at 1.25 with adaptive resolution (steps down to 0.6 while frames stay over
+  ~33 ms, back up when there is headroom); no shadows, no bloom, no NaN-scrub pass, no film grain;
+- `detail` 0.42 (thinner foliage, plants, props, particles, crowds), 3 pooled point lights in the story
+  realm and the Works, fewer chant voices;
+- cheaper shaders: fog without the 3D value-noise banks, the flood without the second cellular pass,
+  and no per-vertex architecture warp / tessellation in the story realm; 35 % thicker fog;
+- distance culling in the story realm (meshes beyond ~48 m, ~30 m in the Backrooms, move to a layer
+  the camera skips);
+- the gallery, the jungle and the story realm + Works are built only when you walk towards their
+  portal (or step through it), so startup builds just the hub.
+
+Touch controls (`src/player/touch.js`): a floating joystick on the left (appears under the thumb,
+analog, push past the ring to run), drag-to-look on the right (pitch clamped), and a thin interact ring
+at the bottom right that lights up with the action word whenever E would do something. The ring, the
+hint and the E key all share one `currentAction()` in `main.js`. Tap a gallery photo to open it. No
+pointer lock on touch; tap to begin (unlocks audio on iOS and asks for fullscreen where available).
+
+Checks: `node tools/test-mobile.mjs mobile|desktop` (zones, renderer.info, touch move / look /
+interact; iPhone 13 emulation) and `node tools/test-touch-interact.mjs` (every interactable via the
+ring). Screenshots: `screenshots/m01…m06-*.png`.
+
 ## Adding GLB / glTF models
 
 Hero objects are registered as slots: `sword`, `creature:Gloria`, `creature:Mortimer`, `creature:Dot`,

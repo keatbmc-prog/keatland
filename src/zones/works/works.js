@@ -95,7 +95,7 @@ export function buildWorks({ scene, renderer, post, quality, collision, audio, v
   let realmOn = false, simT = 0;
   const saved = {};
   const L = lights;
-  const POOL = quality.detail >= 1 ? 6 : 4;
+  const POOL = quality.mobile ? 3 : quality.detail >= 1 ? 6 : 4;
   const pool = []; for (let i = 0; i < POOL; i++) { const l = new THREE.PointLight(0xffd9a0, 0, 26, 1.5); root.add(l); pool.push(l); }
   let poolT = 0, poolAssign = [];
   const sunCol = new THREE.Color(0xffe2b8), hazeCol = new THREE.Color(0x2a3a6a), hazeRed = new THREE.Color(0x7a1440); // violet-teal haze; magenta in the alarm

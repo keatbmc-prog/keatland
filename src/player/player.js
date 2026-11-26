@@ -1,6 +1,6 @@
 // First-person walker: pointer-lock mouse look, WASD/arrows, Shift to run, smooth acceleration,
-// head bob, gravity, stepping, and collision against the CollisionWorld. Touch: left half moves,
-// right half looks (basic; see README for the planned mobile scheme).
+// head bob, gravity, stepping, and collision against the CollisionWorld. Touch input (joystick +
+// drag-to-look) comes from src/player/touch.js.
 import * as THREE from 'three';
 
 export class Player {
@@ -11,19 +11,13 @@ export class Player {
     this.keys = new Set(); this.enabled = false; this.locked = false;
     this.bob = 0; this.grounded = true; this.shake = 0; this.lookSmooth = new THREE.Vector2();
     this.onInteract = null;
-    addEventListener('keydown', (e) => { this.keys.add(e.code); if (e.code === 'KeyE' && this.enabled) this.onInteract?.(); });
+    addEventListener('keydown', (e) => { this.keys.add(e.code); if (e.code === 'KeyE' && !e.repeat && this.enabled) this.onInteract?.(); });
     addEventListener('keyup', (e) => this.keys.delete(e.code));
     addEventListener('blur', () => this.keys.clear());
     document.addEventListener('mousemove', (e) => { if (!this.locked || !this.enabled) return; this.lookSmooth.x += e.movementX; this.lookSmooth.y += e.movementY; });
     document.addEventListener('pointerlockchange', () => { this.locked = document.pointerLockElement === dom; });
-    // touch
-    this.touch = { move: null, look: null, mv: new THREE.Vector2() };
-    dom.addEventListener('touchstart', (e) => { for (const t of e.changedTouches) { if (t.clientX < innerWidth / 2) this.touch.move = { id: t.identifier, x: t.clientX, y: t.clientY }; else this.touch.look = { id: t.identifier, x: t.clientX, y: t.clientY }; } }, { passive: true });
-    dom.addEventListener('touchmove', (e) => { for (const t of e.changedTouches) {
-      if (this.touch.move?.id === t.identifier) this.touch.mv.set((t.clientX - this.touch.move.x) / 60, (t.clientY - this.touch.move.y) / 60).clampScalar(-1, 1);
-      if (this.touch.look?.id === t.identifier) { this.lookSmooth.x += (t.clientX - this.touch.look.x) * 2; this.lookSmooth.y += (t.clientY - this.touch.look.y) * 2; this.touch.look.x = t.clientX; this.touch.look.y = t.clientY; }
-    } }, { passive: true });
-    dom.addEventListener('touchend', (e) => { for (const t of e.changedTouches) { if (this.touch.move?.id === t.identifier) { this.touch.move = null; this.touch.mv.set(0, 0); } if (this.touch.look?.id === t.identifier) this.touch.look = null; } }, { passive: true });
+    // touch input is written here by TouchControls (src/player/touch.js): analog move + run flag
+    this.touch = { mv: new THREE.Vector2(), run: false };
   }
 
   teleport(p, yaw = this.yaw, pitch = 0) {
@@ -47,7 +41,7 @@ export class Player {
     let f = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
     let s = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0);
     f -= this.touch.mv.y; s += this.touch.mv.x;
-    const run = k.has('ShiftLeft') || k.has('ShiftRight');
+    const run = k.has('ShiftLeft') || k.has('ShiftRight') || this.touch.run;
     const speed = run ? 7.2 : 3.8;
     const fw = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
     const rt = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));

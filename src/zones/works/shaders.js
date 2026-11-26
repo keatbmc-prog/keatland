@@ -43,7 +43,7 @@ export function floodHeight(x, z, t) {
 /** is there liquid here at all (behind the front)? */
 export const floodAt = (x) => x < FLOOD.uFront.value - 1.0;
 
-export function floodMaterial() {
+export function floodMaterial({ cheap = false } = {}) {
   const m = new THREE.MeshStandardMaterial({ color: 0x8a6a40, roughness: 0.35, metalness: 0.1, envMapIntensity: 0.3 }); // glossy goo (low env so it stays saturated, not pastel)
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, FLOOD, { uTime: U.time });
@@ -79,7 +79,11 @@ export function floodMaterial() {
           float n1 = kl_snoise(vec3(q * 0.22, uTime * 0.05));
           float n2 = kl_snoise(vec3(q * 0.9 + 4.0, uTime * 0.11));
           vec2 c = klCell(q * 0.55 + n1 * 0.4);
+          #ifdef KL_CHEAP
+          vec2 c2 = vec2(1.0, 0.0); // phones: no broken-glass glints (saves a 9-tap cell pass)
+          #else
           vec2 c2 = klCell(q * 1.6 + 7.0);
+          #endif
           vec3 murk = mix(vec3(0.0, 0.085, 0.075), vec3(0.07, 0.30, 0.0), 0.5 + 0.5 * n1);      // deep teal-to-acid goo
           murk = mix(murk, vec3(0.34, 0.0, 0.20), smoothstep(0.35, 0.7, n2) * 0.65);            // magenta swirls
           vec3 col = murk; float rough = 0.25; float metal = 0.0;
@@ -111,7 +115,8 @@ export function floodMaterial() {
         }`)
       .replace('#include <lights_physical_fragment>', 'metalnessFactor = max(metalnessFactor, vKlMetal);\n#include <lights_physical_fragment>');
   };
-  m.customProgramCacheKey = () => 'kl-flood';
+  if (cheap) m.defines = { KL_CHEAP: '' };
+  m.customProgramCacheKey = () => 'kl-flood' + (cheap ? '-cheap' : '');
   return m;
 }
 

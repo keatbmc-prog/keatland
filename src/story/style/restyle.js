@@ -39,10 +39,10 @@ function zoneOfStory(p) {
   return 'lot';
 }
 
-export function restyleStory({ scene, story, works, collision, quality }) {
+export function restyleStory({ scene, story, works, collision, quality, keep = [] }) {
   const roots = [story.root, works.root];
   // materials used anywhere else in the scene (hub, gallery, jungle) must not change
-  const shared = new Set();
+  const shared = new Set(keep); // `keep`: library materials zones built later may still use (lazy zone building)
   const inRoots = (o) => { for (let q = o; q; q = q.parent) if (roots.includes(q) || q === story.sky) return true; return false; };
   scene.traverse((o) => { if (!o.material || inRoots(o)) return; (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => shared.add(m)); });
   const clones = new Map();
@@ -54,6 +54,8 @@ export function restyleStory({ scene, story, works, collision, quality }) {
   const pylonW = SL.pylon.clone().add(S);
   const storyWarp = warpField({ amp: 0.28, base: S.y + FLOOR, h: 3.4, period: 15, breathe: 0.35, hot: pylonW, hotR: 9, hotAmp: 0.75 });
   const worksWarp = warpField({ amp: 0.6, base: WORKS.y + 0.05, h: 24, period: 30, breathe: 0.25 });
+  const useWarp = quality.warp !== false; // phones: no per-vertex architecture warp (and no tessellation)
+  if (!useWarp) for (const W of [storyWarp, worksWarp]) { W.uWarpAmp.value = 0; W.uWarpHotAmp.value = 0; }
   const noWarp = new Set(); // materials on anything that moves on its own, or must not bend
   const noWarpRoots = [works.flood?.group, works.flood?.mesh, ...(Object.values(works.cast || {}).filter((v) => v?.isObject3D))].filter(Boolean);
   const warpable = (o) => {
@@ -105,7 +107,7 @@ export function restyleStory({ scene, story, works, collision, quality }) {
       const zone = zoneFn(sph.radius > 1 ? sph.center : o.getWorldPosition(tmp)); // merged meshes sit at the root origin: use their bounds
       const Z = ZONES[zone];
       const field = root === works.root ? worksWarp : storyWarp;
-      const bend = !figure && warpable(o) && !(Array.isArray(o.material) ? o.material : [o.material]).some((m) => noWarp.has(m) || (m.userData.toon && !m.userData.toonOpts?.warp));
+      const bend = useWarp && !figure && warpable(o) && !(Array.isArray(o.material) ? o.material : [o.material]).some((m) => noWarp.has(m) || (m.userData.toon && !m.userData.toonOpts?.warp));
       if (bend && sph.radius > 0.4 && !(zone === 'lot' && sph.radius > 40) && !(Array.isArray(o.material) ? o.material : [o.material]).some((m) => m.userData.toon || m.userData.role === 'pipe')) tessellate(o, root === works.root ? 2.2 : 1);
       if (bend) { o.geometry.computeBoundingSphere(); o.geometry.boundingSphere.radius += 1.5; }
       const fix = (m) => {
@@ -211,7 +213,7 @@ export function restyleStory({ scene, story, works, collision, quality }) {
   for (const [i, p] of (F.speakers || []).entries()) { const c = new SpeakerCritter({ seed: 170 + i, scale: 1.4, body: [PAL.violet, PAL.magenta, 0x2a8a9a][i % 3] }); c.g.position.copy(p).add(V(0, 0.3, 0)); c.g.lookAt(V(0, p.y - 2, 0).add(works.root.position)); wg.add(c.g); critters.push({ c, realm: 'works' }); }
 
   // ------------------------------------------------------------------ second pass: remodelled architecture
-  const sw = { warp: storyWarp }, ww = { warp: worksWarp };
+  const sw = useWarp ? { warp: storyWarp } : {}, ww = useWarp ? { warp: worksWarp } : {};
   const followers = []; // props stuck to warped surfaces ride the field: { o, base (local), w (world at rest), W, realm }
   const follow = (o, W, realm) => { o.updateWorldMatrix(true, false); const q = o.parent.getWorldQuaternion(new THREE.Quaternion()).invert(); followers.push({ o, base: o.position.clone(), w: o.getWorldPosition(new THREE.Vector3()), W, realm, q, s: (o.parent?.matrixWorld.getMaxScaleOnAxis() || 1) }); };
   // Reception: a bulbous, soft-edged building. Fat rolls round every top edge and down every corner
@@ -291,7 +293,7 @@ export function restyleStory({ scene, story, works, collision, quality }) {
       TOON.time.value = t;
       PA.talk = Math.max(0, PA.talk - dt);
       if (realm !== 'story' && realm !== 'works') return;
-      for (const f of followers) { if (f.realm !== realm) continue; warpAt(f.W, f.w, t, tmp); f.o.position.copy(f.base).addScaledVector(tmp.applyQuaternion(f.q), 1 / f.s); }
+      if (useWarp) for (const f of followers) { if (f.realm !== realm) continue; warpAt(f.W, f.w, t, tmp); f.o.position.copy(f.base).addScaledVector(tmp.applyQuaternion(f.q), 1 / f.s); }
       const cw = camera.position;
       for (const a of alive) {
         if (a.realm !== realm) continue;

@@ -34,7 +34,7 @@ export function buildStory({ scene, renderer, post, mats, quality, collision, au
 
   // the light pool: a fixed number of point lights that hop to the fixtures nearest the camera
   // (fixed count = no shader recompiles while you walk around)
-  const POOL = quality.detail >= 1 ? 6 : 4;
+  const POOL = quality.mobile ? 3 : quality.detail >= 1 ? 6 : 4;
   const pool = []; for (let i = 0; i < POOL; i++) { const l = new THREE.PointLight(0xfff0cc, 0, 7.5, 1.6); root.add(l); pool.push(l); }
   const allFixtures = [...reception.fixtures.map((p) => ({ p, kind: 'rec' })), ...back.fixtures.map((p) => ({ p, kind: 'back', fl: back.flicker.find((f) => f.p === p) }))];
   let poolT = 0, poolAssign = [];

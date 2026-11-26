@@ -40,6 +40,7 @@ import { buildStory } from './story/story.js';
 import { S as STORY_ORIGIN } from './story/layout.js';
 import { buildWorks } from './zones/works/works.js';
 import { restyleStory } from './story/style/restyle.js';
+import { TouchControls, TOUCH_CSS } from './player/touch.js';
 import { WORKS as WORKS_ORIGIN } from './zones/works/layout.js';
 
 const status = document.getElementById('enter-status');
@@ -50,15 +51,19 @@ const voiceText = document.getElementById('voice-text');
 
 async function boot() {
   const quality = pickQuality();
-  installFogChunks();
+  installFogChunks({ cheap: !!quality.cheapShaders });
+  const touchMode = !!quality.touch, lazy = !!quality.lazyZones;
+  if (touchMode) { const st = document.createElement('style'); st.textContent = TOUCH_CSS + '#enter { z-index: 5; }'; document.head.appendChild(st); document.body.classList.add('touch');
+    const k = document.querySelector('#enter .k'); if (k) k.innerHTML = 'left thumb to walk &middot; push to the edge to run &middot; right thumb to look<br/>the ring at the bottom right touches things &middot; headphones help'; }
   await Promise.all(['92px "Permanent Marker"', '20px "Special Elite"', '40px "Rubik Wet Paint"', '40px "Rye"', '600 40px "Oswald"', '40px "VT323"', '700 40px "Caveat"'].map((f) => document.fonts.load(f).catch(() => {})));
 
   // --- renderer
   const canvas = document.getElementById('world');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: quality.antialias, powerPreference: 'high-performance', stencil: false });
-  const pr = Math.min(devicePixelRatio, quality.pixelRatio);
+  const prMax = Math.min(devicePixelRatio, quality.pixelRatio); let pr = prMax; // (phones: adaptive, see frame())
   renderer.setPixelRatio(pr);
   renderer.setSize(innerWidth, innerHeight);
+  renderer.info.autoReset = false; // reset once per frame (in frame()) so info covers every pass of the frame
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 2.1;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -68,7 +73,7 @@ async function boot() {
 
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(0x06070b, 0.015, 0); // near = density, far = time (see render/fog.js)
-  const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.08, 3200);
+  const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.08, quality.farClip ?? 3200);
 
   // image-based lighting for metals: a tiny dark room with warm and cold panels
   {
@@ -131,19 +136,26 @@ async function boot() {
   // --- the story portal: the stolen maroon sedan under a KEATLAND MOTORS sign
   const entrance = buildHubEntrance({ scene, collision, ground: hubFloor });
   const hubRealm = scene.children.filter((o) => !o.isLight && o !== sky);
-  const gallery = buildGallery({ scene, mats, quality, collision, photos });
-  status.textContent = 'it is overgrowing';
-  await new Promise((r) => setTimeout(r, 0));
-  const jungle = buildJungle({ scene, mats, quality, collision });
-  const swarm = new LeafSwarm(scene, Math.round(260 * quality.detail));
-  const stalker = new Stalker(scene, jungle);
+  // the gallery, the jungle and the story realm + Works are built up front on desktop; phones build
+  // each one only when you approach its portal (see ensureGallery / ensureJungle / ensureStory)
+  let gallery = null, jungle = null, swarm = null, stalker = null, jAudio = null;
+  const ensureGallery = () => { if (gallery) return gallery; gallery = buildGallery({ scene, mats, quality, collision, photos }); gallery.root.visible = realm === 'gallery'; return gallery; };
+  const ensureJungle = () => {
+    if (jungle) return jungle;
+    jungle = buildJungle({ scene, mats, quality, collision }); jungle.root.visible = realm === 'jungle';
+    swarm = new LeafSwarm(scene, Math.round(260 * quality.detail));
+    stalker = new Stalker(scene, jungle);
+    if (jAudio) { stalker.sounds = jAudio; stalker.onRush = () => { player.shake = 0.5; }; }
+    return jungle;
+  };
   let realm = 'hub';
+  if (!lazy) { ensureGallery(); status.textContent = 'it is overgrowing'; await new Promise((r) => setTimeout(r, 0)); ensureJungle(); }
   const hubBg = scene.background, hubFog = scene.fog.color.clone();
   const jungleBg = new THREE.Color(0x020503), jungleFog = new THREE.Color(0x0a160c);
   const moonHome = moon.position.clone();
   const setRealm = (r) => {
     realm = r; const h = r === 'hub', jg = r === 'jungle', st = r === 'story', wk = r === 'works';
-    hubRealm.forEach((o) => (o.visible = h)); gallery.root.visible = r === 'gallery'; jungle.root.visible = jg;
+    hubRealm.forEach((o) => (o.visible = h)); if (gallery) gallery.root.visible = r === 'gallery'; if (jungle) jungle.root.visible = jg;
     sky.visible = !jg && !st && !wk; scene.background = jg ? jungleBg : hubBg; scene.fog.color.copy(jg ? jungleFog : hubFog);
     // in the jungle the "moon" is a green-gold sun far above the canopy; the canopy cuts it into dapples
     if (jg) { moon.position.copy(jungle.center).add(new THREE.Vector3(18, 70, -22)); moon.target.position.copy(jungle.center); moon.color.set(0xd8ffb0); }
@@ -171,36 +183,39 @@ async function boot() {
   const player = new Player(camera, collision, canvas);
   ctx.player = player;
   player.teleport(L.spawn.clone(), L.spawnYaw, 0.1);
-  const audio = new AudioEngine(); ctx.audio = audio;
-  const jAudio = new JungleAudio(audio); stalker.sounds = jAudio;
+  const audio = new AudioEngine({ voices: quality.voices }); ctx.audio = audio;
+  jAudio = new JungleAudio(audio);
+  if (stalker) { stalker.sounds = jAudio; stalker.onRush = () => { player.shake = 0.5; }; }
   const voice = new Voice(audio, { textEl: voiceText });
-  stalker.onRush = () => { player.shake = 0.5; };
   const post = createPost(renderer, scene, camera, quality);
   post.setSize(innerWidth, innerHeight, pr);
   const transitions = new Transitions({ camera, player, post, audio, sky, below, heart, hub });
   // --- the story realm: Keatland Reception (Parts Two and Three), far away in the same scene
-  status.textContent = 'it is parking';
-  await new Promise((r) => setTimeout(r, 0));
-  story = buildStory({ scene, renderer, post, mats, quality, collision, audio, voice, lights: { moon, hemi, rimLight } });
-  story.setActive(false); story.root.visible = false;
-  registerSlot('character:moss', story.exterior.moss.group, [story.exterior.moss.body]);
-  registerSlot('character:keatenHR', story.reception.keaten.group, [story.reception.keaten.body]);
-  registerSlot('character:keatenBackrooms', story.back.keaten.group, [story.back.keaten.body]);
-  registerSlot('character:dale', story.dale.fig.group, [story.dale.fig.body]);
+  let storyStyle = null;
+  const ensureStory = () => {
+    if (story) return story;
+    story = buildStory({ scene, renderer, post, mats, quality, collision, audio, voice, lights: { moon, hemi, rimLight } });
+    story.setActive(false); story.root.visible = false;
+    registerSlot('character:moss', story.exterior.moss.group, [story.exterior.moss.body]);
+    registerSlot('character:keatenHR', story.reception.keaten.group, [story.reception.keaten.body]);
+    registerSlot('character:keatenBackrooms', story.back.keaten.group, [story.back.keaten.body]);
+    registerSlot('character:dale', story.dale.fig.group, [story.dale.fig.body]);
+    // --- the Catecholamine Works: through the steel door in the Backrooms (story Parts Four to Six)
+    works = buildWorks({ scene, renderer, post, quality, collision, audio, voice, lights: { moon, hemi, rimLight }, transitions, player, camera });
+    works.setActive(false); works.root.visible = false;
+    // the story realm's art direction (toon shading, rims, alive props, eyes, speaker critters)
+    storyStyle = restyleStory({ scene, story, works, collision, quality, keep: lazy ? Object.values(mats).filter((m) => m?.isMaterial) : [] });
+    registerSlot('character:keatenWorks', works.cast.keaten.fig.group, [works.cast.keaten.fig.body]);
+    registerSlot('character:daleWorks', works.cast.dale.fig.group, [works.cast.dale.fig.body]);
+    registerSlot('character:worker', works.cast.worker.fig.group, [works.cast.worker.fig.body]);
+    registerSlot('prop:drainStopper', works.factory.plug);
+    registerSlot('prop:execChair', works.cast.office);
+    registerSlot('prop:cjpPanel', works.factory.cjp);
+    if (lazy) applyOverrides('./');
+    return story;
+  };
   registerSlot('story:car', entrance.car);
-  // --- the Catecholamine Works: through the steel door in the Backrooms (story Parts Four to Six)
-  status.textContent = 'it is flooding';
-  await new Promise((r) => setTimeout(r, 0));
-  works = buildWorks({ scene, renderer, post, quality, collision, audio, voice, lights: { moon, hemi, rimLight }, transitions, player, camera });
-  works.setActive(false); works.root.visible = false;
-  // the story realm's art direction (toon shading, rims, alive props, eyes, speaker critters)
-  const storyStyle = restyleStory({ scene, story, works, collision, quality });
-  registerSlot('character:keatenWorks', works.cast.keaten.fig.group, [works.cast.keaten.fig.body]);
-  registerSlot('character:daleWorks', works.cast.dale.fig.group, [works.cast.dale.fig.body]);
-  registerSlot('character:worker', works.cast.worker.fig.group, [works.cast.worker.fig.body]);
-  registerSlot('prop:drainStopper', works.factory.plug);
-  registerSlot('prop:execChair', works.cast.office);
-  registerSlot('prop:cjpPanel', works.factory.cjp);
+  if (!lazy) { status.textContent = 'it is parking'; await new Promise((r) => setTimeout(r, 0)); ensureStory(); }
   loadManifest('./').then(() => applyOverrides('./'));
 
   heart.onBeat = () => audio.heartbeat(0.7 + heart.excite);
@@ -209,11 +224,11 @@ async function boot() {
     flock.startle(sword.base.clone().setY(2)); post.uniforms.uFlash.value = 0.12;
   };
   const cubeDist = () => { const c = shrine.center(); return Math.hypot(player.position.x - c.x, player.position.z - c.z); };
-  const portalIn = () => transitions.portalIn({ cube: photoCube, gallery, setRealm });
+  const portalIn = () => { ensureGallery(); transitions.portalIn({ cube: photoCube, gallery, setRealm }); };
   const portalOut = () => transitions.portalOut({ exitCube: gallery.exitCube, cube: photoCube, gallery, standAt: cubeStand, setRealm });
-  const jungleIn = () => transitions.jungleIn({ portal: hubPortal, jungle, swarm, setRealm });
+  const jungleIn = () => { ensureJungle(); transitions.jungleIn({ portal: hubPortal, jungle, swarm, setRealm }); };
   const jungleOut = () => transitions.jungleOut({ jungle, portal: hubPortal, swarm, setRealm });
-  const storyIn = () => transitions.storyIn({ entrance, story, setRealm });
+  const storyIn = () => { ensureStory(); transitions.storyIn({ entrance, story, setRealm }); };
   const storyOut = () => transitions.storyOut({ entrance, setRealm });
   const worksIn = () => transitions.worksIn({ story, works, setRealm });
   const worksOut = () => transitions.worksOut({ story, works, setRealm });
@@ -229,43 +244,73 @@ async function boot() {
     const c = shrine.center(), d = camera.position.distanceTo(c);
     audio.cubeTwist(c, dur, Math.min(1, 6 / Math.max(1, d)));
   };
+  // One source of truth for "what would E do here": the hint text, the E key and the touch ring all use
+  // it, so the word on screen always matches the action that runs.
+  const currentAction = () => {
+    if (transitions.busy || !player.enabled) return null;
+    const p = player.position;
+    if (realm === 'gallery') { if (aimed) { const f = aimed; return { label: 'open', run: () => openPost(f) }; } return gallery.nearExit(p) ? { label: 'return', run: portalOut } : null; }
+    if (realm === 'jungle') return nearPortal(jungle.exitPortal, 5) ? { label: 'return', run: jungleOut } : null;
+    if (realm === 'story') { const h = story.hint(player); return h ? { label: h, run: () => { const r = story.interact(player, simTime); if (r === 'out') storyOut(); else if (r === 'works') worksIn(); } } : null; }
+    if (realm === 'works') { const h = works.hint(player); return h ? { label: h, run: () => { if (works.interact(player) === 'out') worksOut(); } } : null; }
+    if (sword.near) return { label: 'pull', run: () => sword.interact() };
+    if (entrance.near(p)) return { label: 'get in', run: storyIn };
+    if (cubeDist() < 6.5) return { label: 'enter', run: portalIn };
+    if (nearPortal(hubPortal, 5)) return { label: 'enter', run: jungleIn };
+    return null;
+  };
+  let lastAction = null, lastActionT = -9;
   player.onInteract = () => {
     if (transitions.busy) return;
-    if (realm === 'gallery') { if (aimed) openPost(aimed); else if (gallery.nearExit(player.position)) portalOut(); return; }
-    if (realm === 'jungle') { if (nearPortal(jungle.exitPortal, 5)) jungleOut(); return; }
-    if (realm === 'story') { const r = story.interact(player, simTime); if (r === 'out') storyOut(); else if (r === 'works') worksIn(); return; }
-    if (realm === 'works') { if (works.interact(player) === 'out') worksOut(); return; }
-    if (sword.near) sword.interact();
-    else if (entrance.near(player.position)) storyIn();
-    else if (cubeDist() < 6.5) portalIn();
-    else if (nearPortal(hubPortal, 5)) jungleIn();
+    let a = currentAction();
+    // touch: the ring stays lit for a short grace after the action goes out of range; honour a tap in it
+    if (!a && lastAction && simTime - lastActionT < 0.45) a = lastAction;
+    a?.run();
   };
   canvas.addEventListener('mousedown', () => { if (player.locked && aimed && !transitions.busy) openPost(aimed); });
 
   // --- enter
   let entered = false;
+  const touchUI = touchMode ? new TouchControls({
+    player,
+    onInteract: () => player.onInteract(),
+    onTap: (x, y) => { // tap a gallery photo to open it
+      if (realm !== 'gallery' || transitions.busy || !entered) return;
+      const f = gallery.pickAt(camera, new THREE.Vector2((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1));
+      if (f) openPost(f);
+    },
+  }) : null;
   const enter = () => {
-    audio.start();
+    audio.start(); // inside the gesture: unlocks audio on iOS
     if (!entered) { entered = true; enterEl.classList.add('gone'); player.enabled = true; }
-    canvas.requestPointerLock?.();
+    if (touchMode) {
+      if (touchUI) touchUI.enabled = true;
+      const de = document.documentElement; (de.requestFullscreen || de.webkitRequestFullscreen)?.call(de, { navigationUI: 'hide' })?.catch?.(() => {});
+    } else canvas.requestPointerLock?.();
   };
   enterEl.addEventListener('click', enter);
-  canvas.addEventListener('click', () => { if (entered && !player.locked) canvas.requestPointerLock?.(); });
+  if (touchMode) document.addEventListener('touchend', () => audio.started && audio.start(), { passive: true }); // re-resume after iOS interruptions
+  canvas.addEventListener('click', () => { if (!touchMode && entered && !player.locked) canvas.requestPointerLock?.(); });
 
-  addEventListener('resize', () => {
+  const onResize = () => {
     camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight); post.setSize(innerWidth, innerHeight, pr);
-  });
+    touchUI?.reset();
+  };
+  addEventListener('resize', onResize);
+  addEventListener('orientationchange', () => setTimeout(onResize, 120));
+  window.visualViewport?.addEventListener('resize', onResize);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { touchUI?.reset(); player.keys.clear(); } });
 
   await texturesReady();
   // compile shaders up front (for both realms) to avoid hitches when looking around or crossing over
-  setRealm('gallery'); renderer.compile(scene, camera);
-  setRealm('jungle'); swarm.mesh.visible = true; renderer.compile(scene, camera); swarm.mesh.visible = false;
-  setRealm('story'); renderer.compile(scene, camera);
-  setRealm('works'); works.hold.group.visible = true; works.flood.surface.visible = true; renderer.compile(scene, camera); works.hold.group.visible = false; works.flood.surface.visible = false;
+  if (gallery) { setRealm('gallery'); renderer.compile(scene, camera); }
+  if (jungle) { setRealm('jungle'); swarm.mesh.visible = true; renderer.compile(scene, camera); swarm.mesh.visible = false; }
+  if (story) { setRealm('story'); renderer.compile(scene, camera); }
+  if (works) { setRealm('works'); works.hold.group.visible = true; works.flood.surface.visible = true; renderer.compile(scene, camera); works.hold.group.visible = false; works.flood.surface.visible = false; }
   setRealm('hub'); renderer.compile(scene, camera);
   enterEl.classList.remove('loading');
-  status.textContent = 'click to enter';
+  status.textContent = touchMode ? 'tap to enter' : 'click to enter';
 
   // --- simulation
   let simTime = 0;
@@ -281,17 +326,20 @@ async function boot() {
     else if (realm === 'story') scene.fog.near = story.fogDensity;
     else if (realm === 'works') scene.fog.near = works.fogDensity;
     else { const b = THREE.MathUtils.smoothstep(-camera.position.y, 50, 110); scene.fog.near = THREE.MathUtils.lerp(0.015, 0.006, b); }
+    if (quality.fogMul !== 1) scene.fog.near *= quality.fogMul; // phones: thicker air hides the shorter detail
+    if (lazy && realm === 'hub' && entered && !transitions.busy) prebuild();
     playerUniform.value.copy(player.position);
     FOLIAGE.uPlayer.value.copy(player.position);
     if (!transitions.update(dt) && !window.__keatland?.freeCam) player.update(dt);
     heart.update(dt, t);
     hub.update(dt, t); below.update(dt, t); distant.update(dt, t);
-    photoCube.update(dt, t); shrine.update(dt, t); gallery.update(dt, t);
+    photoCube.update(dt, t); shrine.update(dt, t); gallery?.update(dt, t);
     hubPortal.update(dt, t);
     entrance.update(dt, t);
     if (realm === 'story') story.update(dt, t, player, camera, { entered, busy: transitions.busy });
     if (realm === 'works') works.update(dt, t, player, camera, { busy: transitions.busy });
-    storyStyle.update(dt, t, camera, realm);
+    storyStyle?.update(dt, t, camera, realm);
+    cullStory(dt);
     let snap = null;
     if (realm === 'jungle') { jungle.update(dt, t, player.position); if (entered) snap = stalker.update(dt, t, player, camera); }
     { const v = player.vel ? Math.hypot(player.vel.x, player.vel.z) : 0; const inLeaves = realm === 'jungle' ? Math.min(1, jungle.coverAt(player.position.x, player.position.z)) : 0; jAudio.update(camera, { inJungle: realm === 'jungle', s: snap, playerRustle: Math.min(1, v / 4) * (0.3 + 0.7 * inLeaves) }); }
@@ -318,40 +366,83 @@ async function boot() {
       else if (cubeDist() < 1.9) portalIn();
     }
     aimed = realm === 'gallery' && !transitions.busy ? gallery.pick(camera) : null;
-    let hint = '';
-    if (!transitions.busy && entered) {
-      if (realm === 'gallery') hint = aimed ? 'open' : gallery.nearExit(player.position) ? 'return' : '';
-      else if (realm === 'jungle') hint = nearPortal(jungle.exitPortal, 5) ? 'return' : '';
-      else if (realm === 'story') hint = story.hint(player);
-      else if (realm === 'works') hint = works.hint(player);
-      else if (nearPortal(hubPortal, 5)) hint = 'enter';
-      else if (entrance.near(player.position)) hint = 'get in';
-      else if (sword.near) hint = 'pull';
-      else if (cubeDist() < 6.5) hint = 'enter';
-    }
+    const act = entered ? currentAction() : null;
+    if (act) { lastAction = act; lastActionT = simTime; }
+    const hint = act?.label ?? '';
     if (hint) hintText.textContent = hint;
     hintEl.classList.toggle('on', !!hint);
+    touchUI?.setAction(hint, dt);
     const inStory = realm === 'story' || realm === 'works';
     audio.update(camera, { ritual: inStory ? 0 : U.ritual.value, pencilTip: pencil.tip, pencilDraw: inStory ? 0 : pencil.drawingIntensity, below: inBelow() || realm === 'gallery', quiet: inStory });
-    if (realm !== 'story') story.sAudio.update(dt, { on: false });
-    if (realm !== 'works') works.wAudio.update(dt, { on: false });
+    if (realm !== 'story') story?.sAudio.update(dt, { on: false });
+    if (realm !== 'works') works?.wAudio.update(dt, { on: false });
+  }
+
+  // phones: build a zone when you walk towards its portal (deferred out of the frame; transitions also
+  // build on demand if you get there first)
+  let building = false;
+  function prebuild() {
+    if (building) return;
+    const p = player.position;
+    const job = !gallery && cubeDist() < 24 ? ensureGallery
+      : !jungle && Math.hypot(p.x - LEAF_SPOT.x, p.z - LEAF_SPOT.z) < 26 ? ensureJungle
+      : !story && entrance.near(p, 26) ? ensureStory : null;
+    if (!job) return;
+    building = true; setTimeout(() => { try { job(); } finally { building = false; } }, 0);
+  }
+
+  // phones: distance culling in the story realm (the whole Reception / Backrooms / lot dressing is
+  // otherwise drawn at once; fog hides the cut). Culled meshes move to layer 1, which the camera does
+  // not render, so story code that toggles .visible is never fought.
+  const cull = { list: null, t: 0, refresh: 0, v: new THREE.Vector3() };
+  function cullStory(dt) {
+    if (!quality.mobile || realm !== 'story' || !story) return;
+    cull.t -= dt; cull.refresh -= dt; if (cull.t > 0) return; cull.t = 0.25;
+    if (!cull.list || cull.refresh <= 0) {
+      cull.refresh = 5; cull.list = [];
+      story.root.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && o.geometry) { if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere(); cull.list.push(o); } });
+    }
+    const c = camera.position, D2 = story.state?.zone === 'backrooms' ? 30 : 48;
+    for (const o of cull.list) {
+      const bs = o.geometry.boundingSphere; if (!bs) continue;
+      cull.v.copy(bs.center).applyMatrix4(o.matrixWorld);
+      const far = cull.v.distanceTo(c) - bs.radius * o.matrixWorld.getMaxScaleOnAxis() > D2;
+      if (far) o.layers.set(1); else o.layers.set(0);
+    }
+  }
+
+  // adaptive resolution (phones): step the render scale down while frames stay slower than ~33 ms,
+  // and back up when there is headroom
+  const ad = { acc: 0, n: 0, good: 0 };
+  function adapt(rawDt) {
+    if (!quality.adaptive || document.hidden || rawDt > 0.25) return;
+    ad.acc += rawDt; ad.n++;
+    if (ad.acc < 1.5) return;
+    const avg = ad.acc / ad.n; ad.acc = 0; ad.n = 0;
+    let next = pr;
+    if (avg > 0.034) { next = Math.max(quality.minPixelRatio ?? 0.6, pr - 0.15); ad.good = 0; }
+    else if (avg < 0.022) { if (++ad.good >= 3) { next = Math.min(prMax, pr + 0.1); ad.good = 0; } }
+    else ad.good = 0;
+    if (Math.abs(next - pr) > 1e-3) { pr = next; renderer.setPixelRatio(pr); post.setSize(innerWidth, innerHeight, pr); }
   }
 
   const clock = new THREE.Timer();
   let paused = false;
   function frame() {
     requestAnimationFrame(frame);
-    clock.update(); const dt = Math.min(0.05, clock.getDelta());
+    clock.update(); const raw = clock.getDelta(), dt = Math.min(0.05, raw);
     if (paused) return;
     simulate(dt);
+    renderer.info.reset();
     post.render(simTime);
+    adapt(raw);
     fpsS.frames++; const now = performance.now(); if (!fpsS.t0) fpsS.t0 = now; if (now - fpsS.t0 > 1000) { fpsS.fps = fpsS.frames * 1000 / (now - fpsS.t0); fpsS.frames = 0; fpsS.t0 = now; }
   }
   frame();
 
   // --- debug / automation hook (used by tools/shoot.mjs)
   window.__keatland = {
-    storyStyle,
+    get storyStyle() { return storyStyle; },
     ready: true, quality, slots: listSlots(),
     get fps() { return fpsS.fps; },
     get state() { return { pos: player.position.toArray(), yaw: player.yaw, pitch: player.pitch, phase: flock.phase, pencil: pencil.state, eye: eye.state, swordAttempts: sword.attempts, transition: transitions.active?.name ?? null, t: simTime }; },
@@ -365,24 +456,27 @@ async function boot() {
     swallow() { transitions.swallow(); }, fold() { transitions.fold(); },
     eyeWake() { eye.wake(1); },
     portal() { portalIn(); }, portalBack() { portalOut(); },
-    story, entrance, storyIn() { storyIn(); }, storyOut() { storyOut(); },
+    get story() { return story; }, entrance, storyIn() { storyIn(); }, storyOut() { storyOut(); },
+    ensureZones() { ensureGallery(); ensureJungle(); ensureStory(); }, get built() { return { gallery: !!gallery, jungle: !!jungle, story: !!story, works: !!works }; },
+    get pixelRatio() { return pr; }, touchUI, get action() { return currentAction()?.label ?? ''; },
     /** teleport inside the story realm, in its local coordinates (see src/story/layout.js) */
-    works, worksIn() { worksIn(); }, worksOut() { worksOut(); },
+    get works() { return works; }, worksIn() { worksIn(); }, worksOut() { worksOut(); },
     /** teleport inside the Works, local coords (src/zones/works/layout.js); `label` jumps the scene there */
-    worksGo(x, z, yaw = 0, pitch = 0, label = null) { if (realm !== 'works') { setRealm('works'); works.reset(); } if (label) works.jump(label); player.teleport(new THREE.Vector3(x, 0, z).add(WORKS_ORIGIN).setY(WORKS_ORIGIN.y + 4), yaw, pitch); },
-    storyGo(x, z, yaw = 0, pitch = 0) { if (realm !== 'story') { setRealm('story'); story.reset(); } player.teleport(new THREE.Vector3(x, 0, z).add(STORY_ORIGIN).setY(STORY_ORIGIN.y + 5), yaw, pitch); },
-    jungle, stalker, voice, hubPortal, jungleIn() { jungleIn(); }, jungleOut() { jungleOut(); },
+    worksGo(x, z, yaw = 0, pitch = 0, label = null) { ensureStory(); if (realm !== 'works') { setRealm('works'); works.reset(); } if (label) works.jump(label); player.teleport(new THREE.Vector3(x, 0, z).add(WORKS_ORIGIN).setY(WORKS_ORIGIN.y + 4), yaw, pitch); },
+    storyGo(x, z, yaw = 0, pitch = 0) { ensureStory(); if (realm !== 'story') { setRealm('story'); story.reset(); } player.teleport(new THREE.Vector3(x, 0, z).add(STORY_ORIGIN).setY(STORY_ORIGIN.y + 5), yaw, pitch); },
+    get jungle() { return ensureJungle(); }, get stalker() { ensureJungle(); return stalker; }, voice, hubPortal, jungleIn() { jungleIn(); }, jungleOut() { jungleOut(); },
     voiceSay(say) { const l = say ? voice.lines.find((x) => x.say === say) : voice._pick(realm); voice.speak(l, camera); return l?.text; },
     stalkerState(s, dur) { stalker.setState(s, dur); },
-    get realm() { return realm; }, setRealm, photoCube, gallery, cubeStand, photos: photos.map((p) => ({ caption: p.caption, postUrl: p.postUrl, placeholder: p.placeholder })),
+    get realm() { return realm; }, setRealm, photoCube, get gallery() { return ensureGallery(); }, cubeStand, photos: photos.map((p) => ({ caption: p.caption, postUrl: p.postUrl, placeholder: p.placeholder })),
     cubeCenter() { return shrine.center().toArray(); },
     aimed() { return aimed ? { index: aimed.index, postUrl: aimed.postUrl } : null; },
     pause(v = true) { paused = v; clock.update(); },
-    renderOnce() { post.render(simTime); },
+    renderOnce() { renderer.info.reset(); post.render(simTime); },
     setQuality(q) { if (PRESETS[q]) { const u = new URL(location.href); u.searchParams.set('q', q); location.href = u.toString(); } },
     info() { return renderer.info.render; },
     revealWhispers() { whispers.revealAll(); },
     tip() { return pencil.tip.toArray(); },
+    swordBase() { return sword.base.toArray(); },
     post,
     scene, camera, renderer,
   };
