@@ -5,7 +5,10 @@
 // Any obstacle or wall with `off: true` is ignored (doors that open, walls that appear).
 // Walking off any edge into the void is prevented; small steps are climbed automatically.
 export class CollisionWorld {
-  constructor() { this.grounds = []; this.obstacles = []; this.dynamic = []; this.walls = []; }
+  constructor() { this.grounds = []; this.obstacles = []; this.dynamic = []; this.walls = []; this.wallShift = null; }
+  // wallShift(x, z) -> {x, z} | null: how far the walls round (x, z) are displaced right now (the story
+  // realm's breathing architecture warp bends its walls ~0.3 m; colliding in the wall's rest space keeps
+  // your face out of a bulge, and since door jambs bend with their walls, doorways stay as wide as before)
   addWall(w) { this.walls.push(w); return w; }
   addGround(fn) { this.grounds.push(fn); return fn; }
   addObstacle(o) { this.obstacles.push(o); return o; }
@@ -29,6 +32,8 @@ export class CollisionWorld {
         const dx = x - o.x, dz = z - o.z; const d = Math.hypot(dx, dz); const m = r + o.r;
         if (d < m && d > 1e-5) { x = o.x + (dx / d) * m; z = o.z + (dz / d) * m; }
       }
+      const sh = this.wallShift ? this.wallShift(x, z) : null;
+      if (sh) { x -= sh.x; z -= sh.z; }
       for (const w of this.walls) {
         if (w.off) continue;
         const ex = w.x2 - w.x1, ez = w.z2 - w.z1, L2 = ex * ex + ez * ez;
@@ -39,6 +44,7 @@ export class CollisionWorld {
           else { const L = Math.sqrt(L2); x = px - ez / L * m; z = pz + ex / L * m; }
         }
       }
+      if (sh) { x += sh.x; z += sh.z; }
     }
     return { x, z };
   }

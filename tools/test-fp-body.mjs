@@ -33,10 +33,11 @@ if (MODE !== 'desktop') { res.ring = await ev(() => { const a = document.querySe
 if (sel.includes('story')) { await ev(() => { const K = window.__keatland; K.storyGo(2.2, -6.2, -0.22, 0.02); K.advance(1.5); }); await shot(MODE === 'mobile' ? 'm-fp02-story-hand' : 'fp02-story-hand'); }
 // look down while walking
 if (sel.includes('down')) {
-  await ev(() => { const K = window.__keatland; K.storyGo(-6, 6, 2.6, -1.3); K.advance(0.5); });
+  await ev(() => { const K = window.__keatland; K.storyGo(-6, 6, 2.6, -1.25); K.advance(0.8); });
+  await shot(MODE === 'mobile' ? 'm-fp03-look-down' : 'fp03-look-down');
   await page.keyboard.down('KeyW'); await ev(() => window.__keatland.advance(0.55)); await page.keyboard.up('KeyW');
   await ev(() => { const K = window.__keatland; K.look(K.state.yaw, -1.35); K.fp.update(0); });
-  await shot(MODE === 'mobile' ? 'm-fp03-look-down' : 'fp03-look-down');
+  await shot(MODE === 'mobile' ? 'm-fp03c-look-down-walking' : 'fp03c-look-down-walking');
   await ev(() => { const K = window.__keatland; K.look(K.state.yaw, -1.45); K.advance(0.05); });
   await shot(MODE === 'mobile' ? 'm-fp03b-straight-down' : 'fp03b-straight-down');
 }

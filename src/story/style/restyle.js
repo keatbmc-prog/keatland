@@ -157,7 +157,7 @@ export function restyleStory({ scene, story, works, collision, quality, keep = [
   for (let i = 0, n = 0; i < 300 && n < 26; i++) {
     const x = -110 + rng() * 220, z = -70 + rng() * 170; if (!free(x, z)) continue;
     const r = 0.8 + rng() * 2.6; const col = bCols[Math.floor(rng() * bCols.length)];
-    const m = new THREE.Mesh(blobGeo(r, { seed: 300 + i, detail: 3, lump: 0.25, stretch: [1.2, 0.75, 1.0] }), toonMat(col, { roughness: 0.3, toon: { wobble: 0.05 * r, wobbleF: 1.2, breathe: 0.015, phase: rng() * 6, rim: PAL.acid, rimK: 0.55 } }));
+    const m = new THREE.Mesh(blobGeo(r, { seed: 300 + i, detail: 3, lump: 0.25, stretch: [1.2, 0.75, 1.0] }), toonMat(col, { roughness: 0.3, toon: { wobble: 0.05 * r, wobbleF: 1.2, breathe: 0.015, phase: rng() * 6, rim: 0xffc88a, rimK: 0.45 } }));
     m.position.set(x, r * 0.25, z); m.rotation.y = rng() * 6; m.castShadow = true; m.receiveShadow = true; lot.add(m); n++;
     collision.addObstacle({ x: S.x + x, z: S.z + z, r: r * 1.05 });
     if (rng() < 0.4) { const e = new Eyeball({ r: 0.22 * r, iris: PAL.acid, lidColor: col, seed: 900 + i }); e.group.position.set(x, r * 0.25 + r * 0.55, z + r * 0.55); lot.add(e.group); alive.push({ e, p: e.group.getWorldPosition(new THREE.Vector3()), realm: 'story' }); }
@@ -192,9 +192,9 @@ export function restyleStory({ scene, story, works, collision, quality, keep = [
       alive.push({ e, p: e.group.getWorldPosition(new THREE.Vector3()), realm: 'story', near: 16 });
     } else { // a goopy growth with glowing pustules at the foot of the wall
       const r = 0.25 + rng() * 0.35, g = new THREE.Group(); g.position.set(x + nx * r * 0.4, FLOOR, z + nz * r * 0.4); br.add(g);
-      const m = toonMat([0x8a9a2a, 0x6a2a6a, 0x3a8a6a][n % 3], { roughness: 0.25, toon: { wobble: 0.04, breathe: 0.04, phase: rng() * 6, rim: PAL.acid, rimK: 0.7 } });
+      const m = toonMat([0xa8546a, 0x6a2a6a, 0x8a4a62][n % 3], { roughness: 0.32, toon: { wobble: 0.04, breathe: 0.04, phase: rng() * 6, rim: 0xff9a7a, rimK: 0.45, sat: 1.15 } }); // fleshy, not neon
       const b = new THREE.Mesh(blobGeo(r, { seed: 3000 + i, detail: 2, lump: 0.3, stretch: [1.3, 0.8, 0.9] }), m); b.position.y = r * 0.4; g.add(b);
-      const pm = toonMat(PAL.acid, { emissive: PAL.acid, emissiveIntensity: 1.6 });
+      const pm = toonMat(0xffb47a, { emissive: 0xff7a48, emissiveIntensity: 0.75, toon: { sat: 1.1 } }); // warm, wet pustules
       for (let k = 0; k < 4; k++) { const p = new THREE.Mesh(new THREE.SphereGeometry(r * (0.15 + rng() * 0.15), 10, 8), pm); p.position.set((rng() - 0.5) * r * 1.4, r * (0.5 + rng() * 0.5), (rng() - 0.5) * r * 1.2); g.add(p); }
     }
     n++;
@@ -237,20 +237,20 @@ export function restyleStory({ scene, story, works, collision, quality, keep = [
     // pillowy roof
     add(new RoundedBoxGeometry(rx1 - rx0 + 0.6, 1.3, rz1 - rz0 + 0.6, Math.max(3, Math.round(6 * D)), 0.6), cushion, 0, rH + 0.45, zc);
     // a puffy lip over the door and fat sills on the windows
-    const lip = add(blobGeo(1, { seed: 31, detail: D >= 0.8 ? 4 : 3, lump: 0.12, stretch: [1.75, 0.3, 0.6] }), toonMat(0xff6aa8, { roughness: 0.35, toon: { ...sw, breathe: 0.03, rim: PAL.acid, rimK: 0.5 } }), (SL.door[0] + SL.door[1]) / 2, 2.95, rz1 + 0.35);
+    const lip = add(blobGeo(1, { seed: 31, detail: D >= 0.8 ? 4 : 3, lump: 0.12, stretch: [1.75, 0.3, 0.6] }), toonMat(0xff6aa8, { roughness: 0.35, toon: { ...sw, breathe: 0.03, rim: PAL.orange, rimK: 0.4 } }), (SL.door[0] + SL.door[1]) / 2, 2.95, rz1 + 0.35);
     lip.castShadow = true;
     for (const [a, b, y] of [[SL.window1[0], SL.window1[1], 0.85], [SL.window2[0], SL.window2[1], 1.0]]) add(capsule(0.2, b - a, 14), roll, (a + b) / 2, y, rz1 + 0.2, 0, Math.PI / 2);
   }
   // the pylon goes goopy: the warp hot-spot bends its legs; goo drips off the sign box and pools round its feet
   {
     const g = new THREE.Group(); g.position.copy(SL.pylon); g.rotation.y = 0.5; story.root.add(g);
-    const goo = toonMat(0xd8327a, { roughness: 0.18, toon: { ...sw, wobble: 0.05, wobbleF: 1.6, breathe: 0.02, rim: PAL.acid, rimK: 0.6 } });
+    const goo = toonMat(0xd8327a, { roughness: 0.18, toon: { ...sw, wobble: 0.05, wobbleF: 1.6, breathe: 0.02, rim: PAL.orange, rimK: 0.45 } });
     for (let i = 0; i < 7; i++) { const x = -2.4 + i * 0.8 + (rng() - 0.5) * 0.3, L = 0.6 + rng() * 1.6; const d = new THREE.Mesh(blobGeo(0.28, { seed: 500 + i, detail: 2, lump: 0.1, stretch: [1, L / 0.28 * 0.5, 1] }), goo); d.position.set(x, 9.35 - L * 0.45, (rng() - 0.5) * 0.4); g.add(d); }
     const pool = new THREE.Mesh(blobGeo(1.2, { seed: 509, detail: 3, lump: 0.2, stretch: [2.6, 0.18, 1.7] }), goo); pool.position.set(0, 0.04, 0); g.add(pool);
   }
   // the Backrooms ceilings sag and drip
   {
-    const drip = toonMat(0xc8c44a, { roughness: 0.22, toon: { ...sw, wobble: 0.03, breathe: 0.05, rim: PAL.acid, rimK: 0.6 } });
+    const drip = toonMat(0xb86e7c, { roughness: 0.2, toon: { ...sw, wobble: 0.03, breathe: 0.05, rim: 0xffb0d0, rimK: 0.4, sat: 1.1 } }); // mauve mucus, not acid
     for (let i = 0, n = 0; i < 300 && walls.length && n < Math.round(26 * Math.max(0.5, D)); i++) {
       const w = walls[Math.floor(rng() * walls.length)], u = 0.1 + rng() * 0.8;
       const x = w.x1 + (w.x2 - w.x1) * u, z = w.z1 + (w.z2 - w.z1) * u; const vert = Math.abs(w.x2 - w.x1) < 0.01, side = rng() < 0.5 ? -1 : 1;
@@ -287,8 +287,18 @@ export function restyleStory({ scene, story, works, collision, quality, keep = [
   sweep(story.root, (p) => zoneOfStory(p));
   sweep(works.root, () => 'works');
 
+  // the walls' warp at head height round the player (see CollisionWorld.wallShift): sampled at a few
+  // heights between the shoulders and the top of the head, keeping the strongest push
+  const shiftOut = { x: 0, z: 0 }, sp = new THREE.Vector3(), sd = new THREE.Vector3();
+  const wallShift = (W) => (x, z) => {
+    let bx = 0, bz = 0, bm = -1;
+    for (const y of [1.25, 1.6, 1.9]) { sp.set(x, W.uWarpBase.value + y, z); warpAt(W, sp, TOON.time.value, sd); const m = sd.x * sd.x + sd.z * sd.z; if (m > bm) { bm = m; bx = sd.x; bz = sd.z; } }
+    shiftOut.x = bx; shiftOut.z = bz; return shiftOut;
+  };
   return {
     lot, backrooms: br, works: wg, stats,
+    /** the wall shift for a realm (null when the architecture does not bend) */
+    wallShift(realm) { return !useWarp ? null : realm === 'story' ? wallShift(storyWarp) : realm === 'works' ? wallShift(worksWarp) : null; },
     update(dt, t, camera, realm) {
       TOON.time.value = t;
       PA.talk = Math.max(0, PA.talk - dt);

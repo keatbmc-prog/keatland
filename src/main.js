@@ -169,6 +169,7 @@ async function boot() {
     if (!st) story?.setActive(false); if (!wk) works?.setActive(false);
     if (st) story?.setActive(true); if (wk) works?.setActive(true);
     fp?.setRealm(r);
+    collision.wallShift = storyStyle?.wallShift?.(r) ?? null; // walls that bulge push you back where they bulge
   };
   let story = null, works = null, fp = null;
   const cubeStand = (() => {
@@ -484,6 +485,7 @@ async function boot() {
     tip() { return pencil.tip.toArray(); },
     swordBase() { return sword.base.toArray(); },
     get fp() { return fp; },
+    get collision() { return collision; },
     post,
     scene, camera, renderer,
   };

@@ -12,11 +12,11 @@
 // Motion: idle breathing, walk bob / run swing, a weighty lag when you turn, a reach-and-grab on interact,
 // and a clean tuck away during transitions, scripted rides and while seated.
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { toonify } from '../story/style/toon.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
-const SKIN = new THREE.Color(0xe8a070), SHIRT = new THREE.Color(0x8fb83a), SLEEVE = new THREE.Color(0x7aa830), PANTS = new THREE.Color(0x2e3a6a), SHOE = new THREE.Color(0x3a1428), BELT = new THREE.Color(0x2a1e14), NAIL = new THREE.Color(0xf2c2a0);
+const SKIN = new THREE.Color(0xe8a070), SHIRT = new THREE.Color(0x8fb83a), SLEEVE = new THREE.Color(0x7aa830), PANTS = new THREE.Color(0x3a5590), SHOE = new THREE.Color(0xc43c5c), SHOE_TONGUE = new THREE.Color(0xf0d8c8), SHOE_COLLAR = new THREE.Color(0x2c0c24), SOLE = new THREE.Color(0xefe4cc), BELT = new THREE.Color(0x2a1e14), NAIL = new THREE.Color(0xf2c2a0);
 
 /** a part: geometry (already in bind-pose model space), the bone it rides, a colour (or a colour fn of position) */
 function rigidSkinned(parts, bones, material) {
@@ -54,9 +54,11 @@ function makeBones(spec) {
 /** a tapered, slightly muscled limb between two points (lathe), radius r0 at a, r1 at b */
 function limb(a, b, r0, r1, { seg = 12, rings = 8, bulge = 0.08, flat = 1 } = {}) {
   const L = a.distanceTo(b), pts = [];
-  pts.push(new THREE.Vector2(0.0005, -r0 * 0.6));
+  // rounded (elliptical) end caps, not cone points: a pointed pole shades as a dark star seen end-on
+  const C = 5;
+  for (let i = 0; i < C; i++) { const a = (i / C) * Math.PI / 2; pts.push(new THREE.Vector2(Math.max(0.0005, r0 * Math.sin(a)), -r0 * 0.7 * Math.cos(a))); }
   for (let i = 0; i <= rings; i++) { const t = i / rings; pts.push(new THREE.Vector2(Math.max(0.001, (r0 + (r1 - r0) * t) * (1 + bulge * Math.sin(t * Math.PI))), t * L)); }
-  pts.push(new THREE.Vector2(0.0005, L + r1 * 0.6));
+  for (let i = C - 1; i >= 0; i--) { const a = (i / C) * Math.PI / 2; pts.push(new THREE.Vector2(Math.max(0.0005, r1 * Math.sin(a)), L + r1 * 0.7 * Math.cos(a))); }
   const g = new THREE.LatheGeometry(pts, seg);
   g.scale(1, 1, flat);
   const q = new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), b.clone().sub(a).normalize());
@@ -69,9 +71,45 @@ function capsuleAlong(a, b, r, seg = 8) {
   const m = a.clone().add(b).multiplyScalar(0.5); g.translate(m.x, m.y, m.z); return g;
 }
 
+const CEIL = { value: 0.5 }; // the rig's brightness ceiling (kept under the realm's bloom threshold, see setRealm)
 function toonSkin() {
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0, emissive: 0x000000 });
-  return toonify(m, { rim: 0xffb08a, rimK: 0.22, rimP: 2.6, bands: 3, soft: 0.55, sat: 1.15, shade: 0x5a3a7a, shadeK: 0.35 });
+  // keep the rig readable next to strong lights (the hub sword): highlights roll off smoothly towards a
+  // ceiling below the bloom threshold instead of burning out to white
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uKlCeil = CEIL;
+    sh.fragmentShader = 'uniform float uKlCeil;\n' + sh.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>
+      { float klM = max(max(gl_FragColor.r, gl_FragColor.g), gl_FragColor.b);
+        float klC = uKlCeil, klS = klM > klC ? (klC + (1.0 - exp(-(klM - klC) * 2.5)) * 0.1) / klM : 1.0;
+        gl_FragColor.rgb *= klS; }`);
+  };
+  return toonify(m, { rim: 0xffb08a, rimK: 0.22, rimP: 2.6, bands: 3, soft: 1.0, sat: 1.12, shade: 0x5a3a7a, shadeK: 0.3 });
+}
+
+/** a sculpted sneaker round the ankle point A (toe towards -Z): a cream rubber sole with a bevelled edge, a
+ *  padded upper that rises from a low toe box to the heel counter, a tongue, and a dark padded collar */
+function sneaker(A, side) {
+  const L = 0.27, heelZ = A.z + 0.065, out = [];
+  // footprint (x lateral, y = distance forward from the heel): round heel, wide ball, round toe
+  const halfW = (t) => (0.031 + 0.017 * Math.sin(Math.PI * Math.min(1, t * 1.25)) ** 0.7) * (t > 0.8 ? Math.sqrt(Math.max(0, 1 - ((t - 0.8) / 0.2) ** 2)) * 0.85 + 0.15 : 1);
+  const foot = (scale) => { const sh = new THREE.Shape(), N = 18, pts = [];
+    for (let i = 0; i <= N; i++) { const t = i / N; pts.push([halfW(t) * scale + side * 0.004 * Math.sin(Math.PI * t), t * L * scale + L * (1 - scale) * 0.5]); }
+    for (let i = N; i >= 0; i--) { const t = i / N; pts.push([-halfW(t) * scale + side * 0.004 * Math.sin(Math.PI * t), t * L * scale + L * (1 - scale) * 0.5]); }
+    sh.moveTo(pts[0][0], pts[0][1]); pts.slice(1).forEach(([x, y]) => sh.lineTo(x, y)); return sh; };
+  const place = (g) => { g.rotateX(-Math.PI / 2); g.translate(A.x, 0, heelZ); return g; }; // shape y -> forward (-Z), extrude depth -> up (no mirroring, so the faces stay outward)
+  const sole = new THREE.ExtrudeGeometry(foot(1.0), { depth: 0.012, bevelEnabled: true, bevelThickness: 0.008, bevelSize: 0.007, bevelSegments: 3, curveSegments: 4 });
+  place(sole); sole.translate(0, 0.008, 0); out.push({ geo: sole, color: (p, c) => c.copy(SOLE).multiplyScalar(p.y < 0.006 ? 0.8 : 1) });
+  let up = new THREE.ExtrudeGeometry(foot(0.9), { depth: 0.01, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.018, bevelSegments: 6, curveSegments: 4 });
+  place(up); up.translate(0, 0.026, 0); up.deleteAttribute('uv'); up.deleteAttribute('normal'); up = mergeVertices(up, 1e-5);
+  // squash the pillow into a shoe: low toe box, rising over the instep to the heel counter, flat underneath
+  const pa = up.attributes.position, base = 0.026;
+  for (let i = 0; i < pa.count; i++) { const y = pa.getY(i); if (y <= base + 0.012) { pa.setY(i, Math.max(y, 0.014)); continue; } const t = THREE.MathUtils.clamp((heelZ - pa.getZ(i)) / L, 0, 1);
+    const h = THREE.MathUtils.lerp(1.15, 0.5, THREE.MathUtils.smoothstep(t, 0.25, 0.95)); pa.setY(i, base + 0.012 + (y - base - 0.012) * h); }
+  up.computeVertexNormals();
+  out.push({ geo: up, color: (p, c) => { const t = (heelZ - p.z) / L; const top = p.y > 0.075 - t * 0.035 && Math.abs(p.x - A.x) < 0.02 && t > 0.3 && t < 0.62; c.copy(top ? SHOE_TONGUE : SHOE); if (t > 0.86) c.multiplyScalar(1.12); } });
+  const collar = new THREE.TorusGeometry(0.038, 0.011, 8, 20); collar.rotateX(Math.PI / 2); collar.scale(1, 1, 1.2); collar.translate(A.x, 0.1, A.z + 0.02);
+  out.push({ geo: collar, color: SHOE_COLLAR });
+  return out;
 }
 
 // ------------------------------------------------------------------------------------------ the hand
@@ -100,7 +138,7 @@ function buildHand() {
   const roll = new THREE.TorusGeometry(0.047, 0.016, 10, 22); roll.scale(1, 0.86, 1); roll.translate(0, 0.004, 0.25); parts.push({ geo: roll, bone: 0, color: SLEEVE });
   parts.push({ geo: limb(V(0, 0.004, 0.25), V(0, 0.006, 0.42), 0.05, 0.058, { seg: 16, rings: 4, bulge: 0.05, flat: 0.86 }), bone: 0, color: SHIRT });
   // wrist and the curved palm (domed back of the hand, a fleshy heel and thumb pad)
-  parts.push({ geo: ball(V(0, 0, -0.004), 0.03, 1.12, 0.74, 1.6, 14), bone: 1, color: SKIN });
+  parts.push({ geo: limb(V(0, 0.001, 0.035), V(0, 0.002, -0.07), 0.03, 0.046, { seg: 18, rings: 8, bulge: -0.06, flat: 0.5 }), bone: 1, color: SKIN });
   parts.push({ geo: ball(V(0, 0.002, -0.045), 0.05, 0.96, 0.36, 0.98, 18), bone: 1, color: SKIN });
   parts.push({ geo: ball(V(0.008, -0.01, -0.03), 0.04, 0.95, 0.38, 0.8, 14), bone: 1, color: (p, c) => c.copy(SKIN).multiplyScalar(0.94) });
   parts.push({ geo: ball(V(-0.03, -0.013, -0.028), 0.022, 1.0, 0.75, 1.3, 12), bone: 1, color: SKIN });
@@ -126,11 +164,11 @@ function buildHand() {
 // Model space: feet at y = 0, facing -Z (the player's forward at yaw 0); the torso sits a little behind
 // the camera so looking down shows the chest, belly, belt, legs and shoes, never the inside of you.
 function buildBody() {
-  const Z = 0.26, LZ = Z - 0.14; // how far behind the eye the spine sits (the legs stand a little forward of it)
+  const Z = 0.36, LZ = Z - 0.16; // how far behind the eye the spine sits (the legs stand a little forward of it)
   const spec = [
     ['pelvis', -1, V(0, 0.95, Z)], ['spine', 0, V(0, 1.02, Z)],
-    ['hipL', 0, V(-0.1, 0.92, LZ)], ['kneeL', 2, V(-0.105, 0.5, LZ - 0.02)], ['ankleL', 3, V(-0.105, 0.09, LZ)],
-    ['hipR', 0, V(0.1, 0.92, LZ)], ['kneeR', 5, V(0.105, 0.5, LZ - 0.02)], ['ankleR', 6, V(0.105, 0.09, LZ)],
+    ['hipL', 0, V(-0.1, 0.92, LZ)], ['kneeL', 2, V(-0.105, 0.5, LZ - 0.05)], ['ankleL', 3, V(-0.11, 0.09, LZ - 0.1)],
+    ['hipR', 0, V(0.1, 0.92, LZ)], ['kneeR', 5, V(0.105, 0.5, LZ - 0.05)], ['ankleR', 6, V(0.11, 0.09, LZ - 0.1)],
     ['shL', 1, V(-0.22, 1.33, Z + 0.03)], ['elL', 8, V(-0.24, 1.07, Z + 0.03)],
     ['shR', 1, V(0.22, 1.33, Z + 0.03)], ['elR', 10, V(0.24, 1.07, Z + 0.03)],
   ];
@@ -139,17 +177,18 @@ function buildBody() {
   // torso: a smooth lathe (belly, chest, round shoulders), the open shirt shows a V of skin at the chest
   const prof = new THREE.SplineCurve([[0.155, 0], [0.165, 0.12], [0.158, 0.26], [0.172, 0.38], [0.18, 0.44], [0.13, 0.5], [0.06, 0.52]].map(([r, y]) => new THREE.Vector2(r, y))).getPoints(22);
   prof.unshift(new THREE.Vector2(0.001, 0)); prof.push(new THREE.Vector2(0.001, 0.52));
-  const torso = new THREE.LatheGeometry(prof, 28); torso.scale(1.08, 0.95, 0.72); torso.translate(0, 0.92, Z);
+  const torso = new THREE.LatheGeometry(prof, 28); torso.scale(1.02, 0.95, 0.56); torso.translate(0, 0.92, Z);
   parts.push({ geo: torso, bone: 1, color: (p, c) => { return c.copy(SHIRT).multiplyScalar(0.9 + 0.12 * Math.min(1, (p.y - 0.92) / 0.5)); } });
-  parts.push({ geo: (() => { const g = new THREE.TorusGeometry(0.162, 0.022, 8, 32); g.rotateX(Math.PI / 2); g.scale(1.08, 1, 0.75); g.translate(0, 0.94, Z); return g; })(), bone: 0, color: BELT });
-  parts.push({ geo: ball(V(0, 0.9, Z), 0.17, 1.05, 0.62, 0.76, 18), bone: 0, color: PANTS });
+  parts.push({ geo: (() => { const g = new THREE.TorusGeometry(0.162, 0.022, 8, 32); g.rotateX(Math.PI / 2); g.scale(1.02, 1, 0.58); g.translate(0, 0.94, Z); return g; })(), bone: 0, color: BELT });
+  parts.push({ geo: ball(V(0, 0.88, (Z + LZ) / 2 - 0.01), 0.17, 1.0, 0.62, 0.95, 18), bone: 0, color: PANTS });
   for (const [h, k, a, s] of [[2, 3, 4, -1], [5, 6, 7, 1]]) {
     parts.push({ geo: limb(P(h), P(k), 0.085, 0.062, { seg: 14, rings: 8, bulge: 0.1, flat: 0.92 }), bone: h, color: PANTS });
-    parts.push({ geo: ball(P(k), 0.066, 1, 0.95, 1.08, 12), bone: h, color: PANTS });
+    parts.push({ geo: ball(P(k), 0.06, 1, 0.95, 1.0, 14), bone: h, color: PANTS });
     parts.push({ geo: limb(P(k), P(a), 0.062, 0.048, { seg: 14, rings: 8, bulge: 0.12, flat: 0.95 }), bone: k, color: PANTS });
     // the shoe: a rounded lozenge, toe forward (-Z), a pale sole line
-    const shoe = new THREE.CapsuleGeometry(0.052, 0.17, 6, 14); shoe.rotateX(Math.PI / 2); shoe.scale(1.0, 0.72, 1); shoe.translate(P(a).x + s * 0.004, 0.05, P(a).z - 0.07);
-    parts.push({ geo: shoe, bone: a, color: (p, c) => c.copy(p.y < 0.025 ? NAIL : SHOE) });
+    for (const sp of sneaker(P(a), s)) parts.push({ ...sp, bone: a });
+    const cuff = new THREE.TorusGeometry(0.05, 0.013, 8, 20); cuff.rotateX(Math.PI / 2); cuff.translate(P(a).x, 0.14, P(a).z); // the trouser hem
+    parts.push({ geo: cuff, bone: k, color: (p, c) => c.copy(PANTS).multiplyScalar(0.8) });
   }
   for (const [sh, el, s] of [[8, 9, -1], [10, 11, 1]]) {
     parts.push({ geo: ball(P(sh), 0.072, 1, 1, 1, 14), bone: 1, color: SHIRT });
@@ -193,10 +232,11 @@ export class FirstPersonBody {
   /** per-realm look: a touch of warm fill in the dark hub, toon rims in the bright story realm */
   setRealm(r) {
     const story = r === 'story' || r === 'works';
+    CEIL.value = story ? 0.7 : 0.5; // bloom thresholds: story 0.82, works 0.85, everywhere else 0.62
     for (const m of [this.hand.mat, this.body.mat]) {
       const u = m.userData.toon; if (!u) continue;
-      u.uRimK.value = story ? 0.42 : 0.18; u.uRim.value.set(story ? (r === 'works' ? 0x30e8ff : 0xff7ad8) : 0xffa070);
-      u.uSat.value = story ? 1.25 : 1.05; u.uShadeK.value = story ? 0.35 : 0.2;
+      u.uRimK.value = (story ? 0.42 : 0.18) * (m === this.body.mat ? 0.4 : 1); u.uRim.value.set(story ? (r === 'works' ? 0x30e8ff : 0xff7ad8) : 0xffa070);
+      u.uSat.value = story ? 1.25 : 1.05; u.uShadeK.value = (story ? 0.35 : 0.2) * (m === this.body.mat ? 0.45 : 1); // less violet in the trousers' shadows
       m.emissive.set(story ? 0x000000 : 0x160a04);
     }
   }
@@ -225,9 +265,9 @@ export class FirstPersonBody {
   updateHand(dt, t, walk, run) {
     const P = this.player, cam = this.camera, H = this.hand;
     // screen-space anchor: lower right in landscape; nearer the centre (clear of the ring) in portrait
-    const a = cam.aspect, portrait = a < 1, d = portrait ? 0.46 : 0.42, tv = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
+    const a = cam.aspect, portrait = a < 1, d = portrait ? 0.52 : 0.42, tv = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
     const touch = !!this.quality?.touch; // touch screens keep the lower-right corner for the interact ring
-    const nx = portrait ? 0.12 : touch ? 0.3 : 0.5, ny = portrait ? -0.46 : -0.56; // portrait: the forearm rises from below centre, left of the ring
+    const nx = portrait ? 0.16 : touch ? 0.3 : 0.5, ny = portrait ? -0.56 : -0.56; // portrait: the forearm rises from below centre, left of the ring
     // walk bob (figure eight, in step with the camera bob) and a bigger, looser swing when running
     const b = P.bob, amp = walk * 0.012 + run * 0.02;
     const breathe = Math.sin(t * 1.6) * 0.004, sway = Math.sin(t * 0.7) * 0.003;
@@ -250,10 +290,10 @@ export class FirstPersonBody {
     // the forearm comes in from the lower right (landscape) or from below (portrait)
     this.handRoot.rotation.set(0, 0, 0);
     this.handPivot.rotation.order = 'YXZ';
-    this.handPivot.rotation.set((portrait ? 0.7 : 0.55) - wristP + this.lag.y * 0.5 + Math.sin(b) * amp * 2, (portrait ? -0.06 : touch ? 0.08 : 0.3) + this.lag.x * 0.6, (portrait ? 0.12 : 0.3) + Math.cos(b) * amp * 3);
+    this.handPivot.rotation.set((portrait ? 0.88 : 0.55) - wristP + this.lag.y * 0.5 + Math.sin(b) * amp * 2, (portrait ? 0.12 : touch ? 0.08 : 0.3) + this.lag.x * 0.6, (portrait ? 0.38 : 0.3) + Math.cos(b) * amp * 3);
     // the wrist and the fingers: relaxed curl, a slow idle flex, open/grab for the reach
     const wrist = H.bones[1]; wrist.rotation.set(-0.12 + Math.sin(t * 1.1) * 0.03 - wristP * 0.6, 0.06, 0);
-    const relax = 0.42 + Math.sin(t * 0.9) * 0.04;
+    const relax = (this.camera.aspect < 1 ? 0.24 : 0.42) + Math.sin(t * 0.9) * 0.04; // portrait: a looser, more open hand reads better end-on
     H.fb.forEach(([k, m, d2], i) => {
       const c = THREE.MathUtils.lerp(relax + i * 0.06, -0.08, open) + grab * (0.9 - relax);
       H.bones[k].rotation.set(-c, 0, (i - 1.5) * 0.04 * (1 + open)); H.bones[m].rotation.x = -c * 1.15; H.bones[d2].rotation.x = -c * 0.9;
