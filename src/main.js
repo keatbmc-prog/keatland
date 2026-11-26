@@ -41,6 +41,7 @@ import { S as STORY_ORIGIN } from './story/layout.js';
 import { buildWorks } from './zones/works/works.js';
 import { restyleStory } from './story/style/restyle.js';
 import { TouchControls, TOUCH_CSS } from './player/touch.js';
+import { FirstPersonBody } from './player/fpBody.js';
 import { WORKS as WORKS_ORIGIN } from './zones/works/layout.js';
 
 const status = document.getElementById('enter-status');
@@ -167,8 +168,9 @@ async function boot() {
     // deactivate first, then activate (each realm saves and restores the shared renderer settings)
     if (!st) story?.setActive(false); if (!wk) works?.setActive(false);
     if (st) story?.setActive(true); if (wk) works?.setActive(true);
+    fp?.setRealm(r);
   };
-  let story = null, works = null;
+  let story = null, works = null, fp = null;
   const cubeStand = (() => {
     const b = shrine.group.position, d = new THREE.Vector3(L.spawn.x - b.x, 0, L.spawn.z - b.z).normalize();
     const p = b.clone().addScaledVector(d, 5.6); p.y = hubFloor(p.x, p.z) ?? 0; return p;
@@ -183,6 +185,9 @@ async function boot() {
   const player = new Player(camera, collision, canvas);
   ctx.player = player;
   player.teleport(L.spawn.clone(), L.spawnYaw, 0.1);
+  // your own body: a sculpted hand in view, the rest of you when you look down (src/player/fpBody.js)
+  scene.add(camera); // (the hand rides the camera)
+  fp = new FirstPersonBody({ scene, camera, player, quality }); fp.setRealm('hub');
   const audio = new AudioEngine({ voices: quality.voices }); ctx.audio = audio;
   jAudio = new JungleAudio(audio);
   if (stalker) { stalker.sounds = jAudio; stalker.onRush = () => { player.shake = 0.5; }; }
@@ -265,9 +270,9 @@ async function boot() {
     let a = currentAction();
     // touch: the ring stays lit for a short grace after the action goes out of range; honour a tap in it
     if (!a && lastAction && simTime - lastActionT < 0.45) a = lastAction;
-    a?.run();
+    if (a) { fp.reach(a.label); a.run(); }
   };
-  canvas.addEventListener('mousedown', () => { if (player.locked && aimed && !transitions.busy) openPost(aimed); });
+  canvas.addEventListener('mousedown', () => { if (player.locked && aimed && !transitions.busy) { fp.reach('open'); openPost(aimed); } });
 
   // --- enter
   let entered = false;
@@ -277,7 +282,7 @@ async function boot() {
     onTap: (x, y) => { // tap a gallery photo to open it
       if (realm !== 'gallery' || transitions.busy || !entered) return;
       const f = gallery.pickAt(camera, new THREE.Vector2((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1));
-      if (f) openPost(f);
+      if (f) { fp.reach('open'); openPost(f); }
     },
   }) : null;
   const enter = () => {
@@ -339,6 +344,7 @@ async function boot() {
     if (realm === 'story') story.update(dt, t, player, camera, { entered, busy: transitions.busy });
     if (realm === 'works') works.update(dt, t, player, camera, { busy: transitions.busy });
     storyStyle?.update(dt, t, camera, realm);
+    { const free = !entered || !!window.__keatland?.freeCam; fp.update(dt, { show: !free && (!transitions.busy || fp.reaching), bodyShow: !free && !transitions.busy }); } // the reach plays out, then the rig tucks away for the ride
     cullStory(dt);
     let snap = null;
     if (realm === 'jungle') { jungle.update(dt, t, player.position); if (entered) snap = stalker.update(dt, t, player, camera); }
@@ -477,6 +483,7 @@ async function boot() {
     revealWhispers() { whispers.revealAll(); },
     tip() { return pencil.tip.toArray(); },
     swordBase() { return sword.base.toArray(); },
+    get fp() { return fp; },
     post,
     scene, camera, renderer,
   };

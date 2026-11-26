@@ -403,6 +403,22 @@ Before/after shots: `screenshots/r01…r15-*-compare.jpg` (with `-before.png` / 
 
 Second-pass shots: `screenshots/v01…v15-*-compare.jpg` (first-pass result vs second pass).
 
+## Your own body (first person)
+
+Look down and you are there: `src/player/fpBody.js` gives Keaten a sculpted, rounded right hand and forearm
+in the lower right of the view (rolled green sleeve, tapered forearm, domed back of the hand, jointed
+fingers with knuckles and nails, a thumb), and below the camera a torso, belt, trousers, legs and shoes that
+follow your yaw and stride with the walk / run cycle. No boxes anywhere; the shading is the same toon pass the
+story realm uses, with a realm-tinted rim.
+
+- Motion: breathing sway, walk bob, a looser run swing, a lag when you turn, and a reach-and-grab on every
+  interact (E, a click on a photo, or the touch ring). The rig tucks away for transitions, rides and the car.
+- Cost: two draw calls total (each half is one rigidly skinned, vertex-coloured mesh), about 10k triangles.
+  The hand renders last over a cleared depth buffer, so walls never cut into it.
+- Phones: in portrait the forearm rises from below centre and in landscape it sits left of the interact
+  ring, so the ring is never covered.
+- Test: `node tools/test-fp-body.mjs [desktop|mobile|land] [outDir] [url]` (fp01 to fp06 screenshots).
+
 ## Phones and tablets
 
 Phones, tablets and weak devices (coarse pointer, small touch screen, mobile user agent, or 2 cores /
