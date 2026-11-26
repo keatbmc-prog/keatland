@@ -90,6 +90,7 @@ tools/
   shoot-portal.mjs        portal verification shots (cube, transitions, gallery) -> screenshots/p*.png
   shoot-story.mjs         story portal shots (car, transition, lot, reception, backrooms, Dale) -> screenshots/s*.png
   fetch-instagram.mjs     refresh public/gallery/ from the public Instagram profile (no login)
+  test-photos.mjs         photo uniqueness (cube stickers, gallery frames) + click/tap opens the post
   still.mjs, smoke.mjs    one-off render / smoke test helpers
 ```
 
@@ -104,14 +105,16 @@ fungus, debris) or merged into one geometry per material. Animation is in the sh
 
 To the left of the entrance, a 3x3x3 twisty cube floats in a cradle of sinew fingers
 (`entities/photoCube.js`, `world/cubeShrine.js`). Its stickers are photos from Instagram
-@keaten.blank. When the cube is solved, each face shows one whole photo. Scrambled, the faces become
-a mosaic of slices. It twists by itself: calm single turns, frantic bursts, and every so often it
-unwinds its own history back to solved, holds, and swaps every face to new photos. Faces also wipe to
-the next photo every few seconds. Each turn makes a spatial clack.
+@keaten.blank: all 54 stickers show 54 different photos (centre square crops packed into one atlas
+texture, so the whole cube costs a single photo texture). It twists by itself: calm single turns,
+frantic bursts, and every so often it unwinds its own history back to solved and wipes a batch of
+stickers to new photos. One or two stickers also wipe every few seconds, always to a photo that is not
+already on the cube, so the stickers stay distinct. Each turn makes a spatial clack.
 
 Walk into the cube (or press E near it). It swells around you until one photo fills your sight. You
 come out of that same photo, hanging on the wall of the gallery (`world/gallery.js`), as the room
-grows to full size around you (you shrank). The gallery is a ribbed, breathing chamber. Each photo
+grows to full size around you (you shrank). The gallery is a ribbed, breathing chamber. With more
+than 18 photos it hangs them in two tiers round the wall (64 frames, each a different post). Each photo
 hangs in a knotted frame (gilded, bone or chitin) in its own alcove, with its own lamp-pod, light cone
 and warm wash. Look at a photo and press E (or click) to open its Instagram post in a new tab. The
 pointer is released first. To go back, walk into the small cube on the spine in the centre (or press
@@ -133,8 +136,9 @@ The photos are local files in `public/gallery/`, listed in `public/gallery/manif
 ```
 
 Add, remove or reorder entries. Only `file` is required. `postUrl` defaults to the profile, and any
-extra fields are ignored. The gallery widens and hangs as many frames as there are photos (12–30
-works well), and the cube cycles through all of them. Any size or aspect ratio works: the cube uses a
+extra fields are ignored. The gallery widens and hangs as many frames as there are photos (54 or more
+keeps every cube sticker distinct; 64 ship now, 640 px on the long edge, about 4.3 MB in total), and
+the cube cycles through all of them. Any size or aspect ratio works: the cube uses a
 centre square crop, the frames use the full photo, and large files are downscaled at load time. If a
 file is missing, a painted stand-in clearly labelled PLACEHOLDER is shown instead.
 
@@ -142,6 +146,9 @@ file is missing, a painted stand-in clearly labelled PLACEHOLDER is shown instea
 the page in headless Chromium with no login or credentials, then visits each post for the full-size
 image and carousel slides. Run it with `node tools/fetch-instagram.mjs keaten.blank 30`. Logged out,
 Instagram only shows the latest 12 posts, so anything older has to be added by hand.
+The current set is 64 posts spread evenly across the 84 collected from the public profile, resized
+and de-duplicated (exact and perceptual hashes). `tools/test-photos.mjs [desktop|mobile]` checks that
+the stickers and frames are all distinct and that clicking or tapping a frame opens its post.
 
 ## The leaf portal and the jungle
 

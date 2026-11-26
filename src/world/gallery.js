@@ -3,7 +3,10 @@
 // It sits far from the hub (its own realm); the camera reaches it by diving into the cube.
 //
 // Everything is generated from the photo list, so adding photos to public/gallery/manifest.json
-// simply widens the room and hangs more frames.
+// simply widens the room and hangs more frames: two tiers of pieces, one photo per frame, never
+// repeated. The lower tier is lit from lamp-pods at its foot, the upper tier from pods above it.
+// Per-piece trimmings (mats, washes, light cones, lamp glows) are merged into a handful of meshes,
+// so a wider room costs one draw call per photo and not five.
 import * as THREE from 'three';
 import { sweepGeometry, blobGeometry } from '../geometry/sweep.js';
 import { merge, tendrilTree, vertebraGeometry, vertebraeAlong } from '../geometry/generators.js';
@@ -20,7 +23,7 @@ const V = (x, y, z) => new THREE.Vector3(x, y, z);
 function photoMaterial(tex, seed) {
   return new THREE.ShaderMaterial({
     fog: true,
-    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uMap: { value: null }, uHover: { value: 0 }, uSeed: { value: seed }, uI: { value: 0.62 } }]),
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uMap: { value: null }, uHover: { value: 0 }, uSeed: { value: seed }, uI: { value: 0.62 }, uLampY: { value: 1.05 } }]),
     vertexShader: /* glsl */`
       #include <common>
       #include <fog_pars_vertex>
@@ -32,12 +35,12 @@ function photoMaterial(tex, seed) {
     fragmentShader: /* glsl */`
       #include <common>
       #include <fog_pars_fragment>
-      uniform sampler2D uMap; uniform float uHover; uniform float uSeed; uniform float uI;
+      uniform sampler2D uMap; uniform float uHover; uniform float uSeed; uniform float uI; uniform float uLampY;
       varying vec2 vUv; varying vec3 vW; varying vec3 vN;
       void main(){
         vec3 c = texture2D(uMap, vUv).rgb;
         // the pool of light from the lamp above: brightest top-centre, falling off, slight flicker
-        vec2 d = vUv - vec2(0.5, 1.05);
+        vec2 d = vUv - vec2(0.5, uLampY);
         float pool = exp(-(d.x * d.x * 2.2 + d.y * d.y * 0.9));
         float flick = 0.94 + 0.06 * sin(fogFar * 7.0 + uSeed * 13.0) * sin(fogFar * 2.3 + uSeed);
         float vig = smoothstep(0.0, 0.08, vUv.x) * smoothstep(1.0, 0.92, vUv.x) * smoothstep(0.0, 0.08, vUv.y) * smoothstep(1.0, 0.92, vUv.y);
@@ -70,11 +73,12 @@ export function buildGallery({ scene, mats, quality, collision, photos }) {
   const rng = mulberry32(777);
   const root = new THREE.Group(); root.name = 'gallery'; scene.add(root);
   const updaters = [];
-  const N = photos.length;
+  const NP = photos.length, TIERS = NP > 18 ? 2 : 1, N = Math.ceil(NP / TIERS); // N = columns round the wall
   const R = Math.max(11, (N * 3.6) / (Math.PI * 2));
   const H = 6.5;
   const frameAngle = (i) => (i / N) * Math.PI * 2 + Math.PI / N;
-  const alcove = (a) => { let k = 0; for (let i = 0; i < N; i++) { let d = Math.atan2(Math.sin(a - frameAngle(i)), Math.cos(a - frameAngle(i))); k = Math.max(k, Math.exp(-Math.pow(d * R / 1.9, 4))); } return k; };
+  const alcove = (a) => { const i = Math.round(((a - Math.PI / N) / (Math.PI * 2)) * N); let k = 0; for (const j of [i - 1, i, i + 1]) { const d = Math.atan2(Math.sin(a - frameAngle(j)), Math.cos(a - frameAngle(j))); k = Math.max(k, Math.exp(-Math.pow(d * R / 1.9, 4))); } return k; };
+  const tierY = TIERS === 2 ? [2.05, 4.4] : [2.35], tierH = TIERS === 2 ? 1.78 : 2.05; // photo centre heights / max photo height
 
   // ------------------------------------------------------------------ floor
   const floorG = new THREE.CircleGeometry(R + 1.5, 128, 0, Math.PI * 2);
@@ -96,7 +100,7 @@ export function buildGallery({ scene, mats, quality, collision, photos }) {
     const rr0 = v < 0.55 ? 1 : Math.cos(((v - 0.55) / 0.45) * Math.PI * 0.5);
     for (let i = 0; i <= segA; i++) {
       const a = (i / segA) * Math.PI * 2;
-      const al = alcove(a) * Math.exp(-Math.pow((yy - 2.3) / 2.6, 2)) * (v < 0.6 ? 1 : 0);
+      const al = alcove(a) * (TIERS === 2 ? Math.exp(-Math.pow((yy - 3.25) / 2.5, 4)) : Math.exp(-Math.pow((yy - 2.3) / 2.6, 2))) * (v < 0.6 ? 1 : 0);
       const ribs = 0.25 * Math.pow(Math.abs(Math.sin(a * N + 1.0)), 6) * (1 - al);
       const n = 0.45 * fbm3(Math.cos(a) * 3, yy * 0.25, Math.sin(a) * 3, 4);
       const r = (R + 0.8 * al - ribs + n) * Math.max(0.02, rr0) + 0.5 * (1 - rr0) * fbm3(a * 2, v * 5, 1, 2);
@@ -120,7 +124,8 @@ export function buildGallery({ scene, mats, quality, collision, photos }) {
   // ------------------------------------------------------------------ vertebral ribs climbing between the pieces and meeting overhead
   const vgeo = vertebraGeometry(11, D);
   const ribMats = [];
-  for (let i = 0; i < N; i++) {
+  const ribEvery = D < 0.8 && N > 16 ? 2 : 1, ribStep = D < 0.8 ? 0.95 : 0.62; // a wide room on a phone: half the ribs, sparser vertebrae
+  for (let i = 0; i < N; i += ribEvery) {
     const a = (i / N) * Math.PI * 2;
     const pts = [];
     for (let k = 0; k <= 12; k++) {
@@ -130,7 +135,7 @@ export function buildGallery({ scene, mats, quality, collision, photos }) {
       pts.push(V(G.x + Math.cos(a) * rr, G.y + yy, G.z + Math.sin(a) * rr));
     }
     const c = new THREE.CatmullRomCurve3(pts);
-    ribMats.push(...vertebraeAlong(c, 0.62, (t) => 0.2 + 0.07 * Math.sin(t * Math.PI), V(0, 1, 0).add(V(-Math.cos(a), 0, -Math.sin(a)))));
+    ribMats.push(...vertebraeAlong(c, ribStep, (t) => 0.2 + 0.07 * Math.sin(t * Math.PI), V(0, 1, 0).add(V(-Math.cos(a), 0, -Math.sin(a)))));
   }
   const ribs = new THREE.InstancedMesh(vgeo, mats.bone, ribMats.length);
   ribMats.forEach((m, i) => ribs.setMatrixAt(i, m)); root.add(ribs);
@@ -154,15 +159,16 @@ export function buildGallery({ scene, mats, quality, collision, photos }) {
     organicMaterial({ color: 0x1a1418, color2: 0x050304, veinColor: 0xd9467f, veinAmount: 0.4, veinScale: 2.0, breath: 0, roughness: 0.25, rim: 0.7, rimColor: 0x23304a, normalMap: null }),
   ];
   const lampMat = organicMaterial({ color: 0x6a3a20, color2: 0x2a0a04, veinColor: 0xffd090, veinAmount: 2.0, veinScale: 3.0, breath: 0.1, rim: 2.2, rimColor: 0xffb070, emissive: 0xffa050, emissiveIntensity: 1.6, roughness: 0.3 });
-  const frameGeoms = [[], [], []], thorns = [], lamps = [], stems = [];
-  const photoMeshes = [];
+  const frameGeoms = [[], [], []], thorns = [], lamps = [], stems = [], backs = [], washes = [], shafts = [], glowPts = [];
+  const photoMeshes = []; let shaftMat = null;
   const thornG = new THREE.ConeGeometry(0.035, 0.22, 5); thornG.translate(0, 0.11, 0);
   photos.forEach((ph, i) => {
-    const a = frameAngle(i);
+    const col = i % N, tier = Math.floor(i / N), low = TIERS === 2 && tier === 0; // the lower tier is lit from below
+    const a = frameAngle(col);
     const inward = V(-Math.cos(a), 0, -Math.sin(a));
-    let h = 2.05, w = h * ph.aspect;
+    let h = tierH, w = h * ph.aspect;
     if (w > 2.6) { w = 2.6; h = w / ph.aspect; }
-    const cy = 2.35;
+    const cy = tierY[tier];
     const rr = R + 0.25;
     const center = V(G.x + Math.cos(a) * rr, G.y + cy, G.z + Math.sin(a) * rr);
     const grp = new THREE.Group(); grp.position.copy(center); grp.lookAt(center.clone().add(inward)); root.add(grp);
@@ -170,12 +176,12 @@ export function buildGallery({ scene, mats, quality, collision, photos }) {
     const M = grp.matrixWorld;
     // photo
     const pm = photoMaterial(ph.full, i * 1.7);
-    pm.uniforms.uMap.value = ph.full;
+    pm.uniforms.uMap.value = ph.full; pm.uniforms.uLampY.value = low ? -0.05 : 1.05;
     const photo = new THREE.Mesh(new THREE.PlaneGeometry(w, h), pm); photo.position.z = 0.06; grp.add(photo);
     photo.userData = { index: i, postUrl: ph.postUrl, caption: ph.caption };
     photoMeshes.push(photo);
     // dark mat behind
-    const back = new THREE.Mesh(new THREE.PlaneGeometry(w + 0.36, h + 0.36), frameMats[2]); back.position.z = 0.0; grp.add(back);
+    const bg = new THREE.PlaneGeometry(w + 0.36, h + 0.36); bg.applyMatrix4(M); backs.push(bg);
     // knotted frame: a closed sweep around the photo, thickened at the corners
     const hw = w / 2 + 0.13, hh = h / 2 + 0.13, cr = 0.12;
     const pts = [];
@@ -189,29 +195,40 @@ export function buildGallery({ scene, mats, quality, collision, photos }) {
     fg.applyMatrix4(M);
     frameGeoms[i % 3].push(fg);
     // thorns along the top edge, curling up
-    for (let k = 0; k < 9; k++) {
+    for (let k = 0; k < 9 && !low; k++) { // no thorns on the lower tier (they would poke the piece above)
       const x = -hw + (k + 0.5) * (2 * hw / 9);
       const m = new THREE.Matrix4().compose(V(x, hh + 0.05, 0.08), new THREE.Quaternion().setFromEuler(new THREE.Euler(0.3 * (rng() - 0.3), 0, (rng() - 0.5) * 0.7)), V(1, 0.6 + rng() * 0.9, 1));
       const g = thornG.clone(); g.applyMatrix4(m); g.applyMatrix4(M); thorns.push(g);
     }
     // the lamp: a glowing pod on a curled stem leaning out over the piece
-    const stemC = new THREE.CatmullRomCurve3([V(0, hh + 0.1, 0.05), V(0.15, hh + 0.75, 0.25), V(-0.05, hh + 0.95, 0.75), V(0, hh + 0.7, 0.95)]);
+    const ly = low ? -1 : 1; // lower tier: the pod curls up from below the piece (footlight)
+    const stemC = new THREE.CatmullRomCurve3([V(0, ly * (hh + 0.1), 0.05), V(0.15, ly * (hh + 0.75), 0.25), V(-0.05, ly * (hh + 0.95), 0.75), V(0, ly * (hh + 0.7), 0.95)]);
     const sg = sweepGeometry(stemC, { tubular: 24, radial: 6, radius: (t) => 0.035 * (1 - 0.5 * t) + 0.01 });
     sg.applyMatrix4(M); stems.push(sg);
-    const lampLocal = V(0, hh + 0.62, 0.98);
+    const lampLocal = V(0, ly * (hh + (low ? 0.45 : 0.62)), 0.98);
     const lg = blobGeometry(0.11, { detail: 2, noise: 0.25, seed: i, squash: [1, 1.4, 1] }); lg.translate(lampLocal.x, lampLocal.y, lampLocal.z); lg.applyMatrix4(M); lamps.push(lg);
     const lampW = lampLocal.clone().applyMatrix4(M);
-    const glow = glowSprite(0xffb070, 1.0, 0.7); glow.position.copy(lampW); root.add(glow);
+    glowPts.push(lampW.x, lampW.y, lampW.z);
     // light cone from lamp to the piece and the wash on the wall
-    const shaft = lightShaft({ from: lampW, to: center.clone().add(inward.clone().multiplyScalar(0.05)).add(V(0, -h * 0.25, 0)), r0: 0.06, r1: Math.max(w, h) * 0.55, color: 0xffc890, intensity: 0.09 });
-    root.add(shaft);
-    const wash = new THREE.Mesh(new THREE.PlaneGeometry(w * 2.6, h * 2.4), washMaterial(0xffa868)); wash.position.set(0, h * 0.25, -0.02); grp.add(wash);
+    const shaft = lightShaft({ from: lampW, to: center.clone().add(inward.clone().multiplyScalar(0.05)).add(V(0, -ly * h * 0.25, 0)), r0: 0.06, r1: Math.max(w, h) * 0.55, color: 0xffc890, intensity: 0.09 });
+    shaft.updateMatrix(); const sLen = shaft.geometry.parameters.height; const shG = new THREE.CylinderGeometry(0.06, Math.max(w, h) * 0.55, sLen, D < 0.8 ? 14 : 24, 6, true); shG.translate(0, -sLen / 2, 0); // lighter than the stand-alone cone: 64 of them get merged shG.applyMatrix4(shaft.matrix); shafts.push(shG); shaftMat = shaftMat || shaft.material; shaft.geometry.dispose();
+    const wg = new THREE.PlaneGeometry(w * 2.6, h * 2.4); if (low) { const uv = wg.attributes.uv; for (let q = 0; q < uv.count; q++) uv.setY(q, 1 - uv.getY(q)); }
+    wg.translate(0, ly * h * 0.25, -0.02); wg.applyMatrix4(M); washes.push(wg);
     collision.addObstacle({ x: center.x + inward.x * 0.3, z: center.z + inward.z * 0.3, r: 0.25 });
     // where to stand to look at it
     const stand = center.clone().add(inward.clone().multiplyScalar(2.9)); stand.y = G.y;
     frames.push({ photo, group: grp, center, normal: inward.clone(), stand, w, h, postUrl: ph.postUrl, caption: ph.caption, index: i });
   });
   frameGeoms.forEach((gs, k) => { if (gs.length) { const m = new THREE.Mesh(merge(gs), frameMats[k]); m.castShadow = true; root.add(m); } });
+  // the per-piece trimmings, each merged into one mesh
+  root.add(new THREE.Mesh(merge(backs), frameMats[2]));
+  { const m = new THREE.Mesh(merge(washes), washMaterial(0xffa868)); m.renderOrder = 1; root.add(m); }
+  root.add(new THREE.Mesh(merge(shafts), shaftMat));
+  { // lamp glows: one point sprite each, in a single Points draw (world-size like the old sprites)
+    const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.Float32BufferAttribute(glowPts, 3));
+    const tex = glowSprite(0xffb070, 1, 0.7).material.map;
+    root.add(new THREE.Points(pg, new THREE.PointsMaterial({ map: tex, color: 0xffb070, size: 1.4, sizeAttenuation: true, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false, fog: false })));
+  }
   root.add(new THREE.Mesh(merge(thorns), mats.bone));
   root.add(new THREE.Mesh(merge(stems), mats.sinew));
   root.add(new THREE.Mesh(merge(lamps), lampMat));

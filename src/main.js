@@ -128,7 +128,7 @@ async function boot() {
 
   // --- the Instagram portal: a self-twisting photo cube in the hub, a gallery inside it
   status.textContent = 'it is remembering';
-  const photos = await loadPhotos('./gallery/');
+  const photos = await loadPhotos('./gallery/', quality.mobile ? { maxEdge: 320, atlasCell: 128 } : { maxEdge: 512, atlasCell: 256 }); // phones: smaller textures (GPU memory)
   const photoCube = new PhotoCube(photos, { size: 0.9, gap: 0.05, seed: 7 });
   const shrine = buildCubeShrine({ scene, mats, collision, cube: photoCube });
   // --- the leaf portal: a ribbed arch on the hub's east rim with a living curtain of leaves
